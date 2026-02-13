@@ -43,12 +43,15 @@
   },
   "dependencies": {
     "@huggingface/transformers": "^3.8.1",
+    "better-sqlite3": "^12.6.2",
     "commander": "^14.0.3",
     "ignore": "^7.0.5",
+    "sqlite-vec": "^0.1.7-alpha.2",
     "tree-sitter-wasms": "^0.1.13",
     "web-tree-sitter": "^0.20.8"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^25.2.3",
     "eslint": "^9.39.2",
     "prettier": "^3.8.1",
