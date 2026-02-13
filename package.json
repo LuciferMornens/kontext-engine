@@ -42,6 +42,7 @@
     "url": "https://github.com/AstrolightAI/kontext"
   },
   "dependencies": {
+    "@huggingface/transformers": "^3.8.1",
     "commander": "^14.0.3",
     "ignore": "^7.0.5",
     "tree-sitter-wasms": "^0.1.13",
