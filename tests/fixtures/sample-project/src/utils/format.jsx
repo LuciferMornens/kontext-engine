@@ -1,0 +1,1 @@
+export function Format({ text }) { return <span>{text}</span>; }

@@ -1,0 +1,1 @@
+func greet() -> String { return "Hello" }
