@@ -209,6 +209,18 @@ describe("runAsk", () => {
       expect(output.fallback).toBe(true);
     });
 
+    it("fallback strategy set includes vector search", async () => {
+      setupProject();
+      await runInit(tmpDir, { log: () => undefined, skipEmbedding: true });
+
+      const output = await runAsk(tmpDir, "how does token validation work", {
+        limit: 10,
+        format: "json",
+      });
+
+      expect(output.stats.strategies).toContain("vector");
+    });
+
     it("text fallback includes notice message", async () => {
       setupProject();
       await runInit(tmpDir, { log: () => undefined, skipEmbedding: true });

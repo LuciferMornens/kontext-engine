@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { runQuery } from "../../src/cli/commands/query.js";
+import { runQuery, getEffectiveStrategyWeights } from "../../src/cli/commands/query.js";
 import type { QueryOptions, QueryOutput } from "../../src/cli/commands/query.js";
 import { runInit } from "../../src/cli/commands/init.js";
 
@@ -90,6 +90,20 @@ async function runQueryCapture(
 // ── Tests ────────────────────────────────────────────────────────────────────
 
 describe("ctx query", () => {
+  describe("query classification weight adjustments", () => {
+    it("boosts vector for NL queries", () => {
+      const weights = getEffectiveStrategyWeights("how does the indexer work");
+      expect(weights.vector).toBeGreaterThan(weights.fts);
+      expect(weights.vector).toBeGreaterThan(weights.ast);
+    });
+
+    it("boosts AST for symbol queries", () => {
+      const weights = getEffectiveStrategyWeights("computeChanges");
+      expect(weights.ast).toBeGreaterThan(weights.fts);
+      expect(weights.ast).toBeGreaterThan(weights.vector);
+    });
+  });
+
   describe("JSON output", () => {
     it("returns valid JSON structure", async () => {
       const output = await runQueryCapture("validateToken");

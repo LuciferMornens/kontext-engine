@@ -1,6 +1,7 @@
 import type { SearchResult } from "../search/types.js";
 import type { StrategyName } from "../search/fusion.js";
 import { PLAN_SYSTEM_PROMPT, SYNTHESIZE_SYSTEM_PROMPT } from "./prompts.js";
+import { classifyQuery } from "./classify.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -226,10 +227,85 @@ const CODE_IDENT_RE = /^(?:[a-z]+(?:[A-Z][a-z]*)+|[A-Z][a-zA-Z]+|[a-z]+(?:_[a-z]
 /** Pattern: dotted module paths like "fs.readFileSync" or "path.join". */
 const DOTTED_IDENT_RE = /[a-zA-Z_]\w*(?:\.[a-zA-Z_]\w*)+/g;
 
-const TERM_VARIANTS: Record<string, string[]> = {
-  configuration: ["config"],
-  configurations: ["config"],
+const COMMON_STEMS: Record<string, string> = {
+  authentication: "auth",
+  authorization: "auth",
+  configuration: "config",
+  initialization: "init",
+  initialize: "init",
+  initializing: "init",
+  implementation: "impl",
+  implements: "impl",
+  implementing: "impl",
+  dependency: "dep",
+  dependencies: "dep",
+  middleware: "middleware",
+  validation: "valid",
+  validator: "valid",
+  serialize: "serial",
+  serialization: "serial",
+  deserialize: "deserial",
+  database: "db",
+  logging: "log",
+  logger: "log",
+  testing: "test",
+  handler: "handle",
+  handling: "handle",
+  callback: "callback",
+  subscriber: "subscribe",
+  subscription: "subscribe",
+  rendering: "render",
+  renderer: "render",
+  transformer: "transform",
+  transformation: "transform",
+  connection: "connect",
+  connector: "connect",
+  migration: "migrate",
+  scheduling: "schedule",
+  scheduler: "schedule",
+  parsing: "parse",
+  parser: "parse",
+  routing: "route",
+  router: "route",
+  indexing: "index",
+  indexer: "index",
 };
+
+const STEM_SUFFIXES = [
+  "tion",
+  "sion",
+  "ment",
+  "ness",
+  "ing",
+  "er",
+  "or",
+  "able",
+  "ible",
+  "ity",
+  "ous",
+  "ive",
+  "ful",
+  "less",
+  "ly",
+];
+
+function getStemVariant(term: string): string | null {
+  const lower = term.toLowerCase();
+  const mapped = COMMON_STEMS[lower];
+  if (mapped && mapped !== lower) return mapped;
+
+  if (!/^[a-z][a-z0-9_]*$/.test(lower)) return null;
+
+  for (const suffix of STEM_SUFFIXES) {
+    if (!lower.endsWith(suffix)) continue;
+    const stem = lower.slice(0, -suffix.length);
+    if (stem.length >= 4 && stem !== lower) {
+      return stem;
+    }
+  }
+
+  return null;
+}
 
 /**
  * Extract meaningful search terms from a natural language query.
@@ -244,7 +320,6 @@ const TERM_VARIANTS: Record<string, string[]> = {
 export function extractSearchTerms(query: string): string {
   const terms: string[] = [];
   const seen = new Set<string>();
-  const queryLower = query.toLowerCase();
 
   const addUnique = (term: string): void => {
     const key = term.toLowerCase();
@@ -256,9 +331,8 @@ export function extractSearchTerms(query: string): string {
 
   const addTermAndVariants = (term: string): void => {
     addUnique(term);
-    const lower = term.toLowerCase();
-
-    for (const variant of TERM_VARIANTS[lower] ?? []) {
+    const variant = getStemVariant(term);
+    if (variant && variant !== term.toLowerCase()) {
       addUnique(variant);
     }
   };
@@ -286,13 +360,7 @@ export function extractSearchTerms(query: string): string {
     addTermAndVariants(w);
   }
 
-  // 4. Phrase-level fallback variants for common code-search intents.
-  // "entry point" queries often target index/bootstrap files.
-  if (queryLower.includes("entry point") || queryLower.includes("entrypoint")) {
-    addUnique("index");
-  }
-
-  // 5. Fallback: if everything was filtered, take the longest original word
+  // 4. Fallback: if everything was filtered, take the longest original word
   if (terms.length === 0) {
     const allWords = query
       .replace(/[^a-zA-Z0-9_\s]/g, " ")
@@ -316,18 +384,43 @@ const VALID_STRATEGIES = new Set<string>([
 ]);
 
 function buildFallbackPlan(query: string): SearchPlan {
-  const keywords = extractSearchTerms(query);
-
-  const strategies: StrategyPlan[] = [
-    { strategy: "fts", query: keywords, weight: 0.8, reason: "Full-text keyword search" },
-    { strategy: "ast", query: keywords, weight: 0.9, reason: "Structural symbol search" },
-    { strategy: "path", query: keywords, weight: 0.7, reason: "Path keyword search" },
-  ];
-
+  const strategies = buildFallbackStrategies(query);
   return {
     interpretation: `Searching for: ${query}`,
     strategies,
   };
+}
+
+export function buildFallbackStrategies(query: string): StrategyPlan[] {
+  const keywords = extractSearchTerms(query);
+  const { multipliers } = classifyQuery(query);
+
+  return [
+    {
+      strategy: "vector",
+      query,
+      weight: 1.0 * multipliers.vector,
+      reason: "Semantic search over natural language intent",
+    },
+    {
+      strategy: "fts",
+      query: keywords,
+      weight: 0.8 * multipliers.fts,
+      reason: "Full-text keyword search",
+    },
+    {
+      strategy: "ast",
+      query: keywords,
+      weight: 0.9 * multipliers.ast,
+      reason: "Structural symbol search",
+    },
+    {
+      strategy: "path",
+      query: keywords,
+      weight: 0.7 * multipliers.path,
+      reason: "Path keyword search",
+    },
+  ];
 }
 
 function parseSearchPlan(raw: string, query: string): SearchPlan {

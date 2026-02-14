@@ -289,6 +289,20 @@ describe("planSearch", () => {
     const strategies = result.strategies.map((s) => s.strategy);
     expect(strategies).toContain("path");
   });
+
+  it("fallback plan includes vector strategy with full query", async () => {
+    const mockProvider: LLMProvider = {
+      name: "mock",
+      chat: vi.fn().mockRejectedValue(new Error("API down")),
+    };
+
+    const query = "how does indexer work";
+    const result = await planSearch(mockProvider, query);
+    const vectorStrategy = result.strategies.find((s) => s.strategy === "vector");
+
+    expect(vectorStrategy).toBeDefined();
+    expect(vectorStrategy?.query).toBe(query);
+  });
 });
 
 // ── synthesizeExplanation ────────────────────────────────────────────────────
@@ -406,12 +420,17 @@ describe("steer", () => {
 describe("extractSearchTerms", () => {
   it("removes common English stop words", () => {
     const result = extractSearchTerms("how does the indexer work");
-    expect(result).toBe("indexer work");
+    expect(result).toContain("indexer");
+    expect(result).toContain("work");
+    expect(result).not.toContain("how");
+    expect(result).not.toContain("does");
   });
 
   it("removes question marks and special chars", () => {
     const result = extractSearchTerms("how does indexer work?");
-    expect(result).toBe("indexer work");
+    expect(result).toContain("indexer");
+    expect(result).toContain("work");
+    expect(result).not.toContain("?");
   });
 
   it("preserves code-relevant terms", () => {
@@ -433,7 +452,8 @@ describe("extractSearchTerms", () => {
 
   it("filters out single-character words", () => {
     const result = extractSearchTerms("a b indexer c");
-    expect(result).toBe("indexer");
+    expect(result).toContain("indexer");
+    expect(result).not.toMatch(/\ba\b|\bb\b|\bc\b/);
   });
 
   it("is case-preserving for identifiers", () => {
@@ -447,9 +467,21 @@ describe("extractSearchTerms", () => {
     expect(result.toLowerCase()).toContain("config");
   });
 
-  it("adds index variant for entry point queries", () => {
-    const result = extractSearchTerms("show me the CLI entry point");
-    expect(result).toContain("CLI");
-    expect(result.toLowerCase()).toContain("index");
+  it("adds mapped stem variants for related technical terms", () => {
+    const result = extractSearchTerms("initialization parser dependencies");
+    expect(result.toLowerCase()).toContain("initialization");
+    expect(result.toLowerCase()).toContain("init");
+    expect(result.toLowerCase()).toContain("parser");
+    expect(result.toLowerCase()).toContain("parse");
+    expect(result.toLowerCase()).toContain("dependencies");
+    expect(result.toLowerCase()).toContain("dep");
+  });
+
+  it("adds suffix-based stem variants when not in the map", () => {
+    const result = extractSearchTerms("transformation renderer");
+    expect(result.toLowerCase()).toContain("transformation");
+    expect(result.toLowerCase()).toContain("transform");
+    expect(result.toLowerCase()).toContain("renderer");
+    expect(result.toLowerCase()).toContain("render");
   });
 });

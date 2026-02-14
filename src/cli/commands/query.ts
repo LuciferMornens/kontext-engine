@@ -15,6 +15,7 @@ import type { StrategyResult, StrategyName } from "../../search/fusion.js";
 import type { SearchResult } from "../../search/types.js";
 import { createLocalEmbedder } from "../../indexer/embedder.js";
 import type { Embedder } from "../../indexer/embedder.js";
+import { classifyQuery } from "../../steering/classify.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -60,6 +61,19 @@ const STRATEGY_WEIGHTS: Record<StrategyName, number> = {
   path: 0.7,
   dependency: 0.6,
 };
+
+export function getEffectiveStrategyWeights(
+  query: string,
+): Record<StrategyName, number> {
+  const { multipliers } = classifyQuery(query);
+  return {
+    vector: STRATEGY_WEIGHTS.vector * multipliers.vector,
+    fts: STRATEGY_WEIGHTS.fts * multipliers.fts,
+    ast: STRATEGY_WEIGHTS.ast * multipliers.ast,
+    path: STRATEGY_WEIGHTS.path * multipliers.path,
+    dependency: STRATEGY_WEIGHTS.dependency * multipliers.dependency,
+  };
+}
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -170,9 +184,10 @@ async function runStrategies(
   const results: StrategyResult[] = [];
   const filters = options.language ? { language: options.language } : undefined;
   const limit = options.limit * 3; // Fetch extra for fusion
+  const effectiveWeights = getEffectiveStrategyWeights(query);
 
   for (const strategy of options.strategies) {
-    const weight = STRATEGY_WEIGHTS[strategy];
+    const weight = effectiveWeights[strategy];
     const searchResults = await executeStrategy(
       db,
       strategy,

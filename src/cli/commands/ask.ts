@@ -19,7 +19,7 @@ import {
   createAnthropicProvider,
   steer,
   planSearch,
-  extractSearchTerms,
+  buildFallbackStrategies,
 } from "../../steering/llm.js";
 import type { LLMProvider, StrategyPlan, SearchExecutor } from "../../steering/llm.js";
 import { createLocalEmbedder } from "../../indexer/embedder.js";
@@ -266,12 +266,7 @@ async function fallbackSearch(
   limit: number,
 ): Promise<AskOutput> {
   const executor = createSearchExecutor(db, query);
-  const keywords = extractSearchTerms(query);
-  const fallbackStrategies: StrategyPlan[] = [
-    { strategy: "fts", query: keywords, weight: 0.8, reason: "fallback keyword search" },
-    { strategy: "ast", query: keywords, weight: 0.9, reason: "fallback structural search" },
-    { strategy: "path", query: keywords, weight: 0.7, reason: "fallback path search" },
-  ];
+  const fallbackStrategies: StrategyPlan[] = buildFallbackStrategies(query);
 
   const results = await executor(fallbackStrategies, limit);
 
