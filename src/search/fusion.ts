@@ -62,3 +62,124 @@ export function fusionMerge(
   }
   return results;
 }
+
+// ── Path boost constants ─────────────────────────────────────────────────────
+
+const PATH_BOOST_DIR_EXACT = 1.5;
+const PATH_BOOST_FILENAME = 1.4;
+const PATH_BOOST_PARTIAL = 1.2;
+
+const IMPORT_PENALTY = 0.5;
+
+// ── Fusion with path boost + import deprioritization ─────────────────────────
+
+/**
+ * Merge results with RRF, then apply:
+ * 1. Path-based boosting for results matching boost terms
+ * 2. Import chunk deprioritization when non-import alternatives exist
+ * Re-normalizes scores to 0–1 after all adjustments.
+ */
+export function fusionMergeWithPathBoost(
+  strategyResults: StrategyResult[],
+  limit: number,
+  pathBoostTerms: string[],
+): SearchResult[] {
+  // Start with standard RRF fusion
+  const fused = fusionMerge(strategyResults, limit * 3); // over-fetch for re-ranking
+
+  if (fused.length === 0) return [];
+
+  // 1. Apply path boost
+  const boosted = applyPathBoost(fused, pathBoostTerms);
+
+  // 2. Apply import deprioritization
+  const adjusted = applyImportDeprioritization(boosted);
+
+  // 3. Re-sort by adjusted score
+  adjusted.sort((a, b) => b.score - a.score);
+
+  // 4. Re-normalize to 0–1
+  const sliced = adjusted.slice(0, limit);
+  return renormalize(sliced);
+}
+
+/** Apply path-based boost multipliers to results. */
+function applyPathBoost(
+  results: SearchResult[],
+  terms: string[],
+): SearchResult[] {
+  if (terms.length === 0) return results;
+
+  return results.map((r) => {
+    const boost = getPathBoostFactor(r.filePath, terms);
+    return { ...r, score: r.score * boost };
+  });
+}
+
+/** Get the highest boost factor for a file path given boost terms. */
+function getPathBoostFactor(filePath: string, terms: string[]): number {
+  let maxBoost = 1.0;
+
+  const pathLower = filePath.toLowerCase();
+  const segments = pathLower.split("/");
+  const dirSegments = segments.slice(0, -1);
+  const fileName = segments[segments.length - 1];
+  const fileNameNoExt = fileName.replace(/\.[^.]+$/, "");
+
+  for (const term of terms) {
+    const termLower = term.toLowerCase();
+
+    // Directory segment exact match → highest boost
+    for (const seg of dirSegments) {
+      if (seg === termLower) {
+        maxBoost = Math.max(maxBoost, PATH_BOOST_DIR_EXACT);
+      }
+    }
+
+    // Filename (without extension) match
+    if (fileNameNoExt === termLower) {
+      maxBoost = Math.max(maxBoost, PATH_BOOST_FILENAME);
+    }
+
+    // Partial path match (substring anywhere)
+    if (maxBoost < PATH_BOOST_PARTIAL && pathLower.includes(termLower)) {
+      maxBoost = Math.max(maxBoost, PATH_BOOST_PARTIAL);
+    }
+  }
+
+  return maxBoost;
+}
+
+/** Penalize import chunks when non-import alternatives exist. */
+function applyImportDeprioritization(results: SearchResult[]): SearchResult[] {
+  const hasNonImport = results.some((r) => r.type !== "import");
+  if (!hasNonImport) return results; // All imports → no penalty
+
+  // Check if there are non-import results with positive scores
+  const maxNonImportScore = Math.max(
+    ...results.filter((r) => r.type !== "import").map((r) => r.score),
+    0,
+  );
+
+  if (maxNonImportScore === 0) return results;
+
+  return results.map((r) => {
+    if (r.type === "import") {
+      return { ...r, score: r.score * IMPORT_PENALTY };
+    }
+    return r;
+  });
+}
+
+/** Re-normalize scores so the maximum is 1.0. */
+function renormalize(results: SearchResult[]): SearchResult[] {
+  if (results.length === 0) return results;
+
+  const maxScore = Math.max(...results.map((r) => r.score));
+  if (maxScore === 0) return results;
+
+  return results.map((r) => ({
+    ...r,
+    score: r.score / maxScore,
+  }));
+}

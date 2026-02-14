@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { fusionMerge } from "../../src/search/fusion.js";
+import { fusionMerge, fusionMergeWithPathBoost } from "../../src/search/fusion.js";
 import type { StrategyResult } from "../../src/search/fusion.js";
 import type { SearchResult } from "../../src/search/types.js";
 
@@ -258,5 +258,265 @@ describe("fusionMerge", () => {
     // chunk 2 should still appear but with score 0 (or near 0 normalized)
     const chunk2 = results.find((r) => r.chunkId === 2);
     expect(chunk2?.score).toBe(0);
+  });
+});
+
+// ── Helpers for path boost / import deprioritization ─────────────────────────
+
+function makeResultEx(
+  chunkId: number,
+  opts: {
+    name: string;
+    filePath: string;
+    type?: string;
+    score?: number;
+  },
+): SearchResult {
+  return {
+    chunkId,
+    filePath: opts.filePath,
+    lineStart: 1,
+    lineEnd: 10,
+    name: opts.name,
+    type: opts.type ?? "function",
+    text: `function ${opts.name}() {}`,
+    score: opts.score ?? 0.5,
+    language: "typescript",
+  };
+}
+
+// ── fusionMergeWithPathBoost tests ───────────────────────────────────────────
+
+describe("fusionMergeWithPathBoost", () => {
+  describe("path boosting", () => {
+    it("boosts results whose directory matches a boost term", () => {
+      const input: StrategyResult[] = [
+        {
+          strategy: "fts",
+          weight: 1.0,
+          results: [
+            makeResultEx(1, { name: "handleAuth", filePath: "src/handler.ts" }),
+            makeResultEx(2, { name: "validateToken", filePath: "src/indexer/token.ts" }),
+          ],
+        },
+      ];
+
+      const results = fusionMergeWithPathBoost(input, 10, ["indexer"]);
+
+      // indexer/token.ts should be boosted above handler.ts
+      expect(results[0].chunkId).toBe(2);
+      expect(results[0].filePath).toContain("indexer");
+    });
+
+    it("directory segment exact match gets 1.5x boost", () => {
+      const input: StrategyResult[] = [
+        {
+          strategy: "fts",
+          weight: 1.0,
+          results: [
+            makeResultEx(1, { name: "a", filePath: "src/other/a.ts" }),
+            makeResultEx(2, { name: "b", filePath: "src/indexer/b.ts" }),
+          ],
+        },
+      ];
+
+      const withBoost = fusionMergeWithPathBoost(input, 10, ["indexer"]);
+      const without = fusionMerge(input, 10);
+
+      // Both should have the same items but different ordering
+      const boostedResult = withBoost.find((r) => r.chunkId === 2);
+      const unboostedResult = without.find((r) => r.chunkId === 2);
+      expect(boostedResult).toBeDefined();
+      expect(unboostedResult).toBeDefined();
+      const boostedScore = boostedResult?.score ?? 0;
+      const unboostedScore = unboostedResult?.score ?? 0;
+
+      // Boosted score relative to unboosted should be higher
+      expect(boostedScore).toBeGreaterThan(unboostedScore);
+    });
+
+    it("filename match gets 1.4x boost", () => {
+      const input: StrategyResult[] = [
+        {
+          strategy: "fts",
+          weight: 1.0,
+          results: [
+            makeResultEx(1, { name: "a", filePath: "src/other/a.ts" }),
+            makeResultEx(2, { name: "indexer", filePath: "src/utils/indexer.ts" }),
+          ],
+        },
+      ];
+
+      const results = fusionMergeWithPathBoost(input, 10, ["indexer"]);
+
+      // indexer.ts should be boosted
+      expect(results[0].chunkId).toBe(2);
+    });
+
+    it("partial path match gets 1.2x boost", () => {
+      const input: StrategyResult[] = [
+        {
+          strategy: "fts",
+          weight: 1.0,
+          results: [
+            makeResultEx(1, { name: "a", filePath: "src/other/a.ts" }),
+            makeResultEx(2, { name: "b", filePath: "src/my-indexer-lib/b.ts" }),
+          ],
+        },
+      ];
+
+      const results = fusionMergeWithPathBoost(input, 10, ["indexer"]);
+
+      // my-indexer-lib contains "indexer" as substring → 1.2x
+      expect(results[0].chunkId).toBe(2);
+    });
+
+    it("no boost applied when no terms match any path", () => {
+      const input: StrategyResult[] = [
+        {
+          strategy: "fts",
+          weight: 1.0,
+          results: [
+            makeResultEx(1, { name: "alpha", filePath: "src/alpha.ts" }),
+            makeResultEx(2, { name: "beta", filePath: "src/beta.ts" }),
+          ],
+        },
+      ];
+
+      const withBoost = fusionMergeWithPathBoost(input, 10, ["zzz"]);
+      const without = fusionMerge(input, 10);
+
+      // Scores should be identical
+      expect(withBoost[0].score).toBe(without[0].score);
+      expect(withBoost[1].score).toBe(without[1].score);
+    });
+
+    it("empty boost terms behaves like fusionMerge", () => {
+      const input: StrategyResult[] = [
+        {
+          strategy: "fts",
+          weight: 1.0,
+          results: [makeResult(1, "alpha"), makeResult(2, "beta")],
+        },
+      ];
+
+      const withBoost = fusionMergeWithPathBoost(input, 10, []);
+      const without = fusionMerge(input, 10);
+
+      expect(withBoost).toEqual(without);
+    });
+  });
+
+  describe("import deprioritization", () => {
+    it("penalizes import chunks when non-import results exist", () => {
+      const input: StrategyResult[] = [
+        {
+          strategy: "fts",
+          weight: 1.0,
+          results: [
+            makeResultEx(1, { name: "imports", filePath: "src/handler.ts", type: "import" }),
+            makeResultEx(2, { name: "validateToken", filePath: "src/auth.ts", type: "function" }),
+          ],
+        },
+      ];
+
+      const results = fusionMergeWithPathBoost(input, 10, []);
+
+      // The function chunk should rank above the import chunk
+      expect(results[0].chunkId).toBe(2);
+      expect(results[0].type).toBe("function");
+    });
+
+    it("does NOT penalize imports when they are the only results", () => {
+      const input: StrategyResult[] = [
+        {
+          strategy: "fts",
+          weight: 1.0,
+          results: [
+            makeResultEx(1, { name: "imports", filePath: "src/a.ts", type: "import" }),
+            makeResultEx(2, { name: "imports", filePath: "src/b.ts", type: "import" }),
+          ],
+        },
+      ];
+
+      const results = fusionMergeWithPathBoost(input, 10, []);
+
+      // Both are imports, no penalty should be applied — scores stay normalized
+      expect(results[0].score).toBe(1.0);
+    });
+
+    it("import chunk from the same file as a non-import is penalized", () => {
+      const input: StrategyResult[] = [
+        {
+          strategy: "fts",
+          weight: 1.0,
+          results: [
+            makeResultEx(1, { name: "imports", filePath: "src/auth.ts", type: "import" }),
+            makeResultEx(2, { name: "validateToken", filePath: "src/auth.ts", type: "function" }),
+            makeResultEx(3, { name: "imports", filePath: "src/other.ts", type: "import" }),
+          ],
+        },
+      ];
+
+      const results = fusionMergeWithPathBoost(input, 10, []);
+
+      // Function should be first, then imports penalized
+      expect(results[0].type).toBe("function");
+      // Import from same file or imports with higher-scored non-imports should be penalized
+      const importScores = results.filter((r) => r.type === "import").map((r) => r.score);
+      const functionResult = results.find((r) => r.type === "function");
+      expect(functionResult).toBeDefined();
+      const functionScore = functionResult?.score ?? 0;
+      for (const s of importScores) {
+        expect(s).toBeLessThan(functionScore);
+      }
+    });
+
+    it("combined path boost and import deprioritization", () => {
+      const input: StrategyResult[] = [
+        {
+          strategy: "fts",
+          weight: 1.0,
+          results: [
+            makeResultEx(1, { name: "imports", filePath: "src/handler.ts", type: "import" }),
+            makeResultEx(2, { name: "chunker", filePath: "src/indexer/chunker.ts", type: "function" }),
+            makeResultEx(3, { name: "other", filePath: "src/other.ts", type: "function" }),
+          ],
+        },
+      ];
+
+      const results = fusionMergeWithPathBoost(input, 10, ["indexer"]);
+
+      // indexer/chunker.ts should be first (path boost + function type)
+      expect(results[0].chunkId).toBe(2);
+      expect(results[0].filePath).toContain("indexer");
+      // import chunk should be last
+      const importResult = results.find((r) => r.type === "import");
+      expect(importResult).toBeDefined();
+      expect(results[results.length - 1].type).toBe("import");
+    });
+  });
+
+  describe("re-normalization", () => {
+    it("scores are normalized to 0-1 after boosting", () => {
+      const input: StrategyResult[] = [
+        {
+          strategy: "fts",
+          weight: 1.0,
+          results: [
+            makeResultEx(1, { name: "a", filePath: "src/indexer/a.ts" }),
+            makeResultEx(2, { name: "b", filePath: "src/other/b.ts" }),
+          ],
+        },
+      ];
+
+      const results = fusionMergeWithPathBoost(input, 10, ["indexer"]);
+
+      for (const r of results) {
+        expect(r.score).toBeGreaterThanOrEqual(0);
+        expect(r.score).toBeLessThanOrEqual(1);
+      }
+      expect(results[0].score).toBe(1.0);
+    });
   });
 });

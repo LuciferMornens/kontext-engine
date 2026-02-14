@@ -4,7 +4,7 @@ import path from "node:path";
 import os from "node:os";
 import { createDatabase } from "../../src/storage/db.js";
 import type { KontextDatabase } from "../../src/storage/db.js";
-import { pathSearch, dependencyTrace } from "../../src/search/path.js";
+import { pathSearch, pathKeywordSearch, dependencyTrace } from "../../src/search/path.js";
 
 // ── Test helpers ─────────────────────────────────────────────────────────────
 
@@ -143,6 +143,101 @@ describe("pathSearch", () => {
     expect(r.name).toBe("validateToken");
     expect(r.type).toBe("function");
     expect(r.language).toBe("typescript");
+  });
+});
+
+// ── pathKeywordSearch tests ───────────────────────────────────────────────────
+
+describe("pathKeywordSearch", () => {
+  it("returns chunks from files whose directory matches the query", () => {
+    const results = pathKeywordSearch(db, "auth", 10);
+
+    expect(results.length).toBeGreaterThan(0);
+    const files = results.map((r) => r.filePath);
+    expect(files).toContain("src/auth/token.ts");
+    expect(files).toContain("src/auth/service.ts");
+  });
+
+  it("also matches files in other directories that contain the term in their path", () => {
+    // src/middleware/auth.ts has "auth" in the filename
+    const results = pathKeywordSearch(db, "auth", 10);
+
+    const files = results.map((r) => r.filePath);
+    expect(files).toContain("src/middleware/auth.ts");
+  });
+
+  it("directory name exact match scores highest (1.0)", () => {
+    const results = pathKeywordSearch(db, "auth", 10);
+
+    // src/auth/* files have the directory segment exactly matching "auth"
+    const authDirResult = results.find((r) => r.filePath === "src/auth/token.ts");
+    expect(authDirResult).toBeDefined();
+    expect(authDirResult?.score).toBe(1.0);
+  });
+
+  it("filename match scores 0.9", () => {
+    // src/middleware/auth.ts has "auth" as filename (without extension)
+    const results = pathKeywordSearch(db, "auth", 10);
+
+    const middlewareResult = results.find((r) => r.filePath === "src/middleware/auth.ts");
+    expect(middlewareResult).toBeDefined();
+    expect(middlewareResult?.score).toBe(0.9);
+  });
+
+  it("partial path match scores 0.7", () => {
+    // "middle" partially matches "middleware" in the path
+    const results = pathKeywordSearch(db, "middle", 10);
+
+    expect(results.length).toBeGreaterThan(0);
+    const middlewareResult = results.find((r) => r.filePath === "src/middleware/auth.ts");
+    expect(middlewareResult).toBeDefined();
+    expect(middlewareResult?.score).toBe(0.7);
+  });
+
+  it("returns empty for non-matching term", () => {
+    const results = pathKeywordSearch(db, "nonexistent", 10);
+
+    expect(results).toEqual([]);
+  });
+
+  it("is case-insensitive", () => {
+    const results = pathKeywordSearch(db, "AUTH", 10);
+
+    expect(results.length).toBeGreaterThan(0);
+  });
+
+  it("respects limit parameter", () => {
+    const results = pathKeywordSearch(db, "auth", 1);
+
+    expect(results).toHaveLength(1);
+  });
+
+  it("returns results sorted by score descending", () => {
+    const results = pathKeywordSearch(db, "auth", 10);
+
+    for (let i = 1; i < results.length; i++) {
+      expect(results[i].score).toBeLessThanOrEqual(results[i - 1].score);
+    }
+  });
+
+  it("matches filename without extension", () => {
+    const results = pathKeywordSearch(db, "pool", 10);
+
+    expect(results.length).toBeGreaterThan(0);
+    expect(results[0].filePath).toBe("src/db/pool.py");
+    expect(results[0].score).toBe(0.9); // filename match
+  });
+
+  it("returns full metadata", () => {
+    const results = pathKeywordSearch(db, "auth", 10);
+
+    const r = results[0];
+    expect(r.chunkId).toBeDefined();
+    expect(r.filePath).toBeDefined();
+    expect(r.lineStart).toBeDefined();
+    expect(r.lineEnd).toBeDefined();
+    expect(r.type).toBeDefined();
+    expect(r.language).toBeDefined();
   });
 });
 

@@ -83,6 +83,98 @@ export function pathSearch(
   return results;
 }
 
+// ── Path keyword search ──────────────────────────────────────────────────────
+
+/** Score tiers for keyword-based path matching. */
+const SCORE_DIR_EXACT = 1.0;
+const SCORE_FILENAME = 0.9;
+const SCORE_PARTIAL = 0.7;
+
+/**
+ * Search files by keyword matching against file paths.
+ * Unlike glob-based pathSearch, this takes plain query terms and does
+ * substring matching against indexed file paths.
+ *
+ * Scoring:
+ * - Directory segment exact match → 1.0
+ * - Filename (without extension) exact match → 0.9
+ * - Partial path match (substring) → 0.7
+ */
+export function pathKeywordSearch(
+  db: KontextDatabase,
+  query: string,
+  limit: number,
+): SearchResult[] {
+  const queryLower = query.toLowerCase();
+  const allPaths = db.getAllFilePaths();
+
+  // Score each path
+  const scoredPaths: { filePath: string; score: number }[] = [];
+
+  for (const filePath of allPaths) {
+    const score = scorePathMatch(filePath, queryLower);
+    if (score > 0) {
+      scoredPaths.push({ filePath, score });
+    }
+  }
+
+  if (scoredPaths.length === 0) return [];
+
+  // Sort by score descending
+  scoredPaths.sort((a, b) => b.score - a.score);
+
+  // Collect chunks from matched files, respecting limit
+  const results: SearchResult[] = [];
+
+  for (const { filePath, score } of scoredPaths) {
+    if (results.length >= limit) break;
+
+    const file = db.getFile(filePath);
+    if (!file) continue;
+
+    const chunks = db.getChunksByFile(file.id);
+    for (const chunk of chunks) {
+      if (results.length >= limit) break;
+
+      results.push({
+        chunkId: chunk.id,
+        filePath: file.path,
+        lineStart: chunk.lineStart,
+        lineEnd: chunk.lineEnd,
+        name: chunk.name,
+        type: chunk.type,
+        text: chunk.text,
+        score,
+        language: file.language,
+      });
+    }
+  }
+
+  return results;
+}
+
+/** Score how well a file path matches a keyword query. Returns 0 for no match. */
+function scorePathMatch(filePath: string, queryLower: string): number {
+  const pathLower = filePath.toLowerCase();
+
+  // Check directory segments for exact match
+  const segments = pathLower.split("/");
+  const dirSegments = segments.slice(0, -1); // all but filename
+  for (const seg of dirSegments) {
+    if (seg === queryLower) return SCORE_DIR_EXACT;
+  }
+
+  // Check filename (without extension) for exact match
+  const fileName = segments[segments.length - 1];
+  const fileNameNoExt = fileName.replace(/\.[^.]+$/, "");
+  if (fileNameNoExt === queryLower) return SCORE_FILENAME;
+
+  // Check for substring match anywhere in the path
+  if (pathLower.includes(queryLower)) return SCORE_PARTIAL;
+
+  return 0;
+}
+
 // ── Dependency trace (BFS) ───────────────────────────────────────────────────
 
 const DEPTH_SCORE_BASE = 1.0;

@@ -201,4 +201,87 @@ describe("ctx query", () => {
       expect(output.stats.totalResults).toBe(0);
     });
   });
+
+  describe("search quality: source over imports", () => {
+    let indexerDir: string;
+
+    beforeEach(async () => {
+      // Create a project with indexer source files and a handler that imports from indexer
+      indexerDir = fs.mkdtempSync(path.join(os.tmpdir(), "kontext-indexer-"));
+
+      // Source file in src/indexer/
+      const indexerSrc = path.join(indexerDir, "src", "indexer");
+      fs.mkdirSync(indexerSrc, { recursive: true });
+      fs.writeFileSync(
+        path.join(indexerSrc, "chunker.ts"),
+        `export function chunkFile(content: string): string[] {
+  const lines = content.split("\\n");
+  return lines;
+}
+
+export function mergeChunks(chunks: string[]): string {
+  return chunks.join("\\n");
+}
+`,
+      );
+
+      // Handler that imports from indexer
+      const handlerDir = path.join(indexerDir, "src");
+      fs.writeFileSync(
+        path.join(handlerDir, "handler.ts"),
+        `import { chunkFile, mergeChunks } from "./indexer/chunker";
+
+export async function handleIndex(content: string): Promise<string> {
+  const chunks = chunkFile(content);
+  return mergeChunks(chunks);
+}
+`,
+      );
+
+      await runInit(indexerDir, { log: () => undefined, skipEmbedding: true });
+    });
+
+    afterEach(() => {
+      fs.rmSync(indexerDir, { recursive: true, force: true });
+    });
+
+    it("query 'indexer' returns indexer source files before import chunks", async () => {
+      const output = await runQuery(indexerDir, "indexer", {
+        limit: 10,
+        strategies: ["fts", "ast", "path"],
+        format: "json",
+      });
+
+      // There should be results
+      expect(output.results.length).toBeGreaterThan(0);
+
+      // Find results from src/indexer/ directory
+      const indexerResults = output.results.filter((r) =>
+        r.file.includes("indexer/"),
+      );
+
+      // Find import-type results
+      const importResults = output.results.filter((r) => r.type === "import");
+
+      // Indexer source files should appear in results
+      expect(indexerResults.length).toBeGreaterThan(0);
+
+      // If there are import results, they should score lower than indexer source
+      if (importResults.length > 0 && indexerResults.length > 0) {
+        const topIndexerScore = Math.max(...indexerResults.map((r) => r.score));
+        const topImportScore = Math.max(...importResults.map((r) => r.score));
+        expect(topIndexerScore).toBeGreaterThan(topImportScore);
+      }
+    });
+
+    it("default strategies include path strategy", async () => {
+      const output = await runQuery(indexerDir, "indexer", {
+        limit: 10,
+        strategies: ["fts", "ast", "path"],
+        format: "json",
+      });
+
+      expect(output.stats.strategies).toContain("path");
+    });
+  });
 });

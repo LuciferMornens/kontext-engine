@@ -9,8 +9,8 @@ import { astSearch } from "../../search/ast.js";
 import { KontextError, SearchError, ErrorCode } from "../../utils/errors.js";
 import { handleCommandError } from "../../utils/error-boundary.js";
 import { createLogger, LogLevel } from "../../utils/logger.js";
-import { pathSearch } from "../../search/path.js";
-import { fusionMerge } from "../../search/fusion.js";
+import { pathSearch, pathKeywordSearch } from "../../search/path.js";
+import { fusionMergeWithPathBoost } from "../../search/fusion.js";
 import type { StrategyResult, StrategyName } from "../../search/fusion.js";
 import type { SearchResult } from "../../search/types.js";
 import { createLocalEmbedder } from "../../indexer/embedder.js";
@@ -107,9 +107,18 @@ function extractSymbolNames(query: string): string[] {
   return matches ?? [];
 }
 
-/** Heuristic: check if query looks like a file path pattern */
+/** Heuristic: check if query looks like a file path pattern (glob) */
 function isPathLike(query: string): boolean {
   return query.includes("/") || query.includes("*") || query.includes(".");
+}
+
+/** Extract terms from query for path-based boosting. */
+function extractPathBoostTerms(query: string): string[] {
+  // Split on whitespace and filter out very short tokens
+  return query
+    .split(/\s+/)
+    .map((t) => t.trim())
+    .filter((t) => t.length >= 2);
 }
 
 // ── Main query function ──────────────────────────────────────────────────────
@@ -135,7 +144,8 @@ export async function runQuery(
 
   try {
     const strategyResults = await runStrategies(db, query, options);
-    const fused = fusionMerge(strategyResults, options.limit);
+    const pathBoostTerms = extractPathBoostTerms(query);
+    const fused = fusionMergeWithPathBoost(strategyResults, options.limit, pathBoostTerms);
     const outputResults = fused.map(toOutputResult);
 
     const searchTimeMs = Math.round(performance.now() - start);
@@ -228,8 +238,8 @@ async function executeStrategy(
     }
 
     case "path": {
-      if (!isPathLike(query)) return [];
-      return pathSearch(db, query, limit);
+      if (isPathLike(query)) return pathSearch(db, query, limit);
+      return pathKeywordSearch(db, query, limit);
     }
 
     case "dependency":
@@ -257,7 +267,7 @@ export function registerQueryCommand(program: Command): void {
     .option(
       "-s, --strategy <list>",
       "Comma-separated strategies: vector,fts,ast,path",
-      "fts,ast",
+      "fts,ast,path",
     )
     .option("--language <lang>", "Filter by language")
     .option("-f, --format <fmt>", "Output format: json|text", "json")
@@ -266,7 +276,7 @@ export function registerQueryCommand(program: Command): void {
       const projectPath = process.cwd();
       const verbose = program.opts()["verbose"] === true;
       const logger = createLogger({ level: verbose ? LogLevel.DEBUG : LogLevel.INFO });
-      const strategies = (opts["strategy"] ?? "fts,ast")
+      const strategies = (opts["strategy"] ?? "fts,ast,path")
         .split(",")
         .map((s) => s.trim()) as StrategyName[];
 

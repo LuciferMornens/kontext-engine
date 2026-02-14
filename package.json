@@ -1,6 +1,6 @@
 {
   "name": "kontext-engine",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Context engine for AI coding agents — semantic code search via CLI",
   "type": "module",
   "license": "MIT",
