@@ -12,6 +12,7 @@ interface ProjectConfig {
   dimensions: number;
 }
 
+/** Structured output from the status command. */
 export interface StatusOutput {
   initialized: boolean;
   fileCount: number;
@@ -113,6 +114,7 @@ function formatStatus(projectPath: string, output: StatusOutput): string {
 
 // ── Main status function ─────────────────────────────────────────────────────
 
+/** Gather index statistics: file/chunk/vector counts, languages, DB size, config. */
 export async function runStatus(projectPath: string): Promise<StatusOutput> {
   const absoluteRoot = path.resolve(projectPath);
   const ctxDir = path.join(absoluteRoot, CTX_DIR);

@@ -3,6 +3,7 @@ import type { ASTNode } from "./parser.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
+/** A logical code chunk with content, location, and a deterministic content hash. */
 export interface Chunk {
   id: string;
   filePath: string;
@@ -31,6 +32,7 @@ const TOKEN_MULTIPLIER = 1.3;
 
 // ── Token estimation ─────────────────────────────────────────────────────────
 
+/** Rough token count estimate (~4 chars per token). */
 export function estimateTokens(text: string): number {
   const wordCount = text.split(/\s+/).filter((w) => w.length > 0).length;
   return Math.ceil(wordCount * TOKEN_MULTIPLIER);
@@ -192,6 +194,7 @@ function collectImportTexts(nodes: ASTNode[]): string[] {
 
 // ── Main entry point ─────────────────────────────────────────────────────────
 
+/** Split AST nodes into logical chunks. Merges small constants; keeps functions/classes whole. */
 export function chunkFile(
   nodes: ASTNode[],
   filePath: string,

@@ -4,6 +4,7 @@ import { LANGUAGE_MAP } from "../indexer/discovery.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
+/** A single file change event from the watcher. */
 export interface FileChange {
   type: "add" | "change" | "unlink";
   path: string;
@@ -21,6 +22,7 @@ export interface WatcherEvents {
   onError: (error: Error) => void;
 }
 
+/** Handle returned by createWatcher. Call start() to begin, stop() to clean up. */
 export interface WatcherHandle {
   start(): Promise<void>;
   stop(): Promise<void>;
@@ -48,6 +50,7 @@ function isWatchedFile(filePath: string): boolean {
   return WATCHED_EXTENSIONS.has(ext);
 }
 
+/** Create a file watcher that debounces changes and filters by code extensions. */
 export function createWatcher(
   options: WatcherOptions,
   events: WatcherEvents,

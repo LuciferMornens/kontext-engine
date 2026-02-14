@@ -12,6 +12,7 @@ function bm25ToScore(rank: number): number {
 
 // ── FTS search ───────────────────────────────────────────────────────────────
 
+/** Full-text search via SQLite FTS5 with BM25 ranking. Scores normalized as 1/(1+|rank|). */
 export function ftsSearch(
   db: KontextDatabase,
   query: string,

@@ -8,6 +8,7 @@ export interface EmbeddingResult {
   dimensions: number;
 }
 
+/** Embedding provider: generates vector representations of text. */
 export interface Embedder {
   readonly name: string;
   readonly dimensions: number;
@@ -43,6 +44,7 @@ export function cosineSimilarity(a: Float32Array, b: Float32Array): number {
 
 // ── Text preparation ─────────────────────────────────────────────────────────
 
+/** Format a chunk into embedding-friendly text with file path and name prefix. */
 export function prepareChunkText(
   filePath: string,
   parent: string | null,
@@ -117,6 +119,7 @@ function getCacheDir(): string {
   return `${home}/.cache/kontext/models`;
 }
 
+/** Create a local embedder using Xenova/all-MiniLM-L6-v2 (384 dims, ONNX Runtime). */
 export async function createLocalEmbedder(): Promise<Embedder> {
   const pipe = await getLocalPipeline();
 
@@ -177,6 +180,7 @@ const VOYAGE_MODEL = "voyage-code-3";
 const VOYAGE_DIMENSIONS = 1024;
 const VOYAGE_BATCH_SIZE = 128;
 
+/** Create an embedder using Voyage AI's code embedding API. */
 export function createVoyageEmbedder(apiKey: string): Embedder {
   return {
     name: VOYAGE_MODEL,
@@ -237,6 +241,7 @@ const OPENAI_MODEL = "text-embedding-3-large";
 const OPENAI_DIMENSIONS = 1024; // truncated from 3072 for efficiency
 const OPENAI_BATCH_SIZE = 128;
 
+/** Create an embedder using OpenAI's text-embedding-3-small API. */
 export function createOpenAIEmbedder(apiKey: string): Embedder {
   return {
     name: OPENAI_MODEL,

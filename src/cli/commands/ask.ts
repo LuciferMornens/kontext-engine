@@ -26,6 +26,7 @@ import type { Embedder } from "../../indexer/embedder.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
+/** Options for the LLM-steered ask command. */
 export interface AskOptions {
   limit: number;
   format: "json" | "text";
@@ -84,6 +85,7 @@ const PROVIDER_FACTORIES: Record<string, (key: string) => LLMProvider> = {
 
 const DETECTION_ORDER = ["gemini", "openai", "anthropic"];
 
+/** Auto-detect LLM provider from env vars (CTX_GEMINI_KEY → CTX_OPENAI_KEY → CTX_ANTHROPIC_KEY). */
 export function detectProvider(explicit?: string): LLMProvider | null {
   if (explicit) {
     const envVar = PROVIDER_ENV_MAP[explicit];
@@ -254,6 +256,7 @@ async function fallbackSearch(
 
 // ── Main ask function ────────────────────────────────────────────────────────
 
+/** LLM-steered natural language search. Falls back to basic multi-strategy search without API key. */
 export async function runAsk(
   projectPath: string,
   query: string,

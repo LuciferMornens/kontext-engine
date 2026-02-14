@@ -18,6 +18,7 @@ import { runInit } from "./init.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
+/** Options for the watch command. */
 export interface WatchOptions {
   init?: boolean;
   debounceMs?: number;
@@ -25,6 +26,7 @@ export interface WatchOptions {
   skipEmbedding?: boolean;
 }
 
+/** Handle for a running watch session. Call stop() for graceful shutdown. */
 export interface WatchHandle {
   stop(): Promise<void>;
 }
@@ -189,6 +191,7 @@ async function loadEmbedder(): Promise<Embedder> {
 
 // ── Main watch function ──────────────────────────────────────────────────────
 
+/** Start watching a project for file changes. Re-indexes incrementally on each change batch. */
 export async function runWatch(
   projectPath: string,
   options: WatchOptions = {},

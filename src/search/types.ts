@@ -1,3 +1,4 @@
+/** A single search result with chunk location, content, and relevance score (0–1). */
 export interface SearchResult {
   chunkId: number;
   filePath: string;
@@ -10,6 +11,7 @@ export interface SearchResult {
   language: string;
 }
 
+/** Optional filters applied as post-processing on search results. */
 export interface SearchFilters {
   language?: string;
 }

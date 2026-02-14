@@ -90,6 +90,7 @@ export interface FTSResult {
   rank: number;
 }
 
+/** Main database interface. Provides CRUD for files, chunks, vectors, FTS, and stats. */
 export interface KontextDatabase {
   // Files
   upsertFile(file: FileInput): number;
@@ -144,6 +145,7 @@ const DEFAULT_DIMENSIONS = 384;
 
 // ── Factory ──────────────────────────────────────────────────────────────────
 
+/** Create or open a SQLite database at the given path. Initializes schema and loads sqlite-vec. */
 export function createDatabase(
   dbPath: string,
   dimensions: number = DEFAULT_DIMENSIONS,

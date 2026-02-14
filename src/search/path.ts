@@ -41,6 +41,7 @@ function globToRegExp(pattern: string): RegExp {
 
 // ── Path search ──────────────────────────────────────────────────────────────
 
+/** Search files by glob pattern. Converts globs to SQL LIKE clauses. */
 export function pathSearch(
   db: KontextDatabase,
   pattern: string,
@@ -87,6 +88,7 @@ export function pathSearch(
 const DEPTH_SCORE_BASE = 1.0;
 const DEPTH_SCORE_DECAY = 0.2;
 
+/** BFS traversal of the import/dependency graph. Scores decay with depth. */
 export function dependencyTrace(
   db: KontextDatabase,
   chunkId: number,

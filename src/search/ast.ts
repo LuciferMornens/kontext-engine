@@ -19,6 +19,7 @@ const SCORE_FUZZY = 0.5;
 
 // ── AST search ───────────────────────────────────────────────────────────────
 
+/** AST-aware symbol search by name, type, parent, and language. Supports exact/prefix/fuzzy matching. */
 export function astSearch(
   db: KontextDatabase,
   filters: ASTFilters,

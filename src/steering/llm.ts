@@ -8,6 +8,7 @@ export interface ChatMessage {
   content: string;
 }
 
+/** LLM provider for the steering layer. Wraps Gemini, OpenAI, or Anthropic chat APIs. */
 export interface LLMProvider {
   name: string;
   chat(messages: ChatMessage[]): Promise<string>;
@@ -25,6 +26,7 @@ export interface SearchPlan {
   strategies: StrategyPlan[];
 }
 
+/** Full result from LLM-steered search: plan, results, explanation, and cost. */
 export interface SteeringResult {
   interpretation: string;
   strategies: StrategyPlan[];
@@ -246,6 +248,7 @@ function parseSearchPlan(raw: string, query: string): SearchPlan {
   };
 }
 
+/** Ask the LLM to interpret a query and plan which search strategies to use. */
 export async function planSearch(
   provider: LLMProvider,
   query: string,
@@ -303,6 +306,7 @@ function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
 }
 
+/** Full steering pipeline: plan → search → synthesize. Falls back to basic search on failure. */
 export async function steer(
   provider: LLMProvider,
   query: string,

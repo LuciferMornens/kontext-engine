@@ -1,10 +1,7 @@
 import { KontextError } from "./errors.js";
 import type { Logger } from "./logger.js";
 
-/**
- * Standard error handler for CLI commands.
- * Returns the process exit code (1 for KontextError, 2 for unexpected).
- */
+/** Standard error handler for CLI commands. Returns exit code: 1 for KontextError, 2 for unexpected. */
 export function handleCommandError(
   err: unknown,
   logger: Logger,

@@ -18,6 +18,7 @@ import type { Embedder } from "../../indexer/embedder.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
+/** Options for the query command. */
 export interface QueryOptions {
   limit: number;
   strategies: StrategyName[];
@@ -113,6 +114,7 @@ function isPathLike(query: string): boolean {
 
 // ── Main query function ──────────────────────────────────────────────────────
 
+/** Execute a multi-strategy search with RRF fusion. Returns ranked results. */
 export async function runQuery(
   projectPath: string,
   query: string,

@@ -5,6 +5,7 @@ import Parser from "web-tree-sitter";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
+/** An extracted AST node: function, class, method, type, import, or constant. */
 export interface ASTNode {
   type: "function" | "class" | "method" | "import" | "export" | "type" | "constant";
   name: string | null;
@@ -41,6 +42,7 @@ function resolveWasmPath(filename: string): string {
   return path.join(path.dirname(require.resolve("tree-sitter-wasms/package.json")), "out", filename);
 }
 
+/** Initialize the Tree-sitter WebAssembly parser. Must be called before parseFile. */
 export async function initParser(): Promise<void> {
   if (initialized) return;
   await Parser.init({
@@ -471,6 +473,7 @@ function extractPython(
 
 // ── Main entry point ─────────────────────────────────────────────────────────
 
+/** Parse a source file with Tree-sitter and extract AST nodes. */
 export async function parseFile(
   filePath: string,
   language: string,

@@ -7,6 +7,7 @@ import { createLogger, LogLevel } from "../../utils/logger.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
+/** Project-level configuration stored in .ctx/config.json. */
 export interface KontextConfig {
   embedder: {
     provider: string;
@@ -38,6 +39,7 @@ export interface ConfigShowOutput {
 const CTX_DIR = ".ctx";
 const CONFIG_FILENAME = "config.json";
 
+/** Default configuration values for a new project. */
 export const DEFAULT_CONFIG: KontextConfig = {
   embedder: {
     provider: "local",
@@ -204,6 +206,7 @@ function parseValue(rawValue: string): unknown {
 
 // ── Public API ───────────────────────────────────────────────────────────────
 
+/** Read and return the full project configuration. Creates defaults if missing. */
 export function runConfigShow(projectPath: string): ConfigShowOutput {
   const ctxDir = resolveCtxDir(projectPath);
   const config = readConfig(ctxDir);
@@ -214,12 +217,14 @@ export function runConfigShow(projectPath: string): ConfigShowOutput {
   };
 }
 
+/** Get a config value by dot-notation key (e.g., "search.defaultLimit"). */
 export function runConfigGet(projectPath: string, key: string): unknown {
   const ctxDir = resolveCtxDir(projectPath);
   const config = readConfig(ctxDir);
   return getNestedValue(config as unknown as Record<string, unknown>, key);
 }
 
+/** Set a config value by dot-notation key. Validates against known rules. */
 export function runConfigSet(
   projectPath: string,
   key: string,
@@ -239,6 +244,7 @@ export function runConfigSet(
   writeConfig(ctxDir, config);
 }
 
+/** Reset all configuration to defaults. */
 export function runConfigReset(projectPath: string): void {
   const ctxDir = resolveCtxDir(projectPath);
   writeConfig(ctxDir, structuredClone(DEFAULT_CONFIG));

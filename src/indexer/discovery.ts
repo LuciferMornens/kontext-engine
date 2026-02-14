@@ -5,6 +5,7 @@ import ignore from "ignore";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
+/** A source file discovered during scanning, with its detected language. */
 export interface DiscoveredFile {
   path: string; // relative to project root
   absolutePath: string;
@@ -21,6 +22,7 @@ export interface DiscoverOptions {
 
 // ── Language extension map ───────────────────────────────────────────────────
 
+/** Maps file extensions to language names. Used for filtering and language detection. */
 export const LANGUAGE_MAP: Record<string, string> = {
   ".ts": "typescript",
   ".tsx": "typescript",
@@ -136,6 +138,7 @@ async function statSafe(
 
 // ── Main ─────────────────────────────────────────────────────────────────────
 
+/** Recursively scan a directory for source files, respecting .gitignore and .ctxignore. */
 export async function discoverFiles(
   options: DiscoverOptions,
 ): Promise<DiscoveredFile[]> {

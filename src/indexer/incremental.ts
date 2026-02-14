@@ -4,6 +4,7 @@ import type { DiscoveredFile } from "./discovery.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
+/** Result of incremental change detection: files categorized by status. */
 export interface IncrementalResult {
   added: string[];
   modified: string[];
@@ -30,6 +31,7 @@ export async function hashFileContent(absolutePath: string): Promise<string> {
 
 // ── Change detection ─────────────────────────────────────────────────────────
 
+/** Compare discovered files against stored hashes to detect adds, modifies, and deletes. */
 export async function computeChanges(
   discovered: DiscoveredFile[],
   db: ChangeDetectionDb,

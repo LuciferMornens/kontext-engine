@@ -12,6 +12,7 @@ function distanceToScore(distance: number): number {
 
 // ── Vector search ────────────────────────────────────────────────────────────
 
+/** KNN vector similarity search. Scores normalized as 1/(1+distance). */
 export async function vectorSearch(
   db: KontextDatabase,
   embedder: Embedder,

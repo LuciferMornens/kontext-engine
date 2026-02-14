@@ -1,5 +1,6 @@
 // ── Log levels ───────────────────────────────────────────────────────────────
 
+/** Numeric log level constants. Lower = more verbose. */
 export const LogLevel = {
   DEBUG: 0,
   INFO: 1,
@@ -8,10 +9,12 @@ export const LogLevel = {
   SILENT: 4,
 } as const;
 
+/** Union type of all log level numeric values. */
 export type LogLevelValue = (typeof LogLevel)[keyof typeof LogLevel];
 
 // ── Logger interface ─────────────────────────────────────────────────────────
 
+/** Leveled logger that writes to stderr. */
 export interface Logger {
   debug(msg: string, ...args: unknown[]): void;
   info(msg: string, ...args: unknown[]): void;
@@ -21,6 +24,7 @@ export interface Logger {
 
 // ── Options ──────────────────────────────────────────────────────────────────
 
+/** Options for creating a logger instance. */
 export interface LoggerOptions {
   level?: LogLevelValue;
 }
@@ -42,6 +46,7 @@ function write(level: string, msg: string, args: unknown[]): void {
   process.stderr.write(`[${level}] ${msg}${extra}\n`);
 }
 
+/** Create a logger. Respects `CTX_DEBUG=1` env var for debug output. */
 export function createLogger(options?: LoggerOptions): Logger {
   const minLevel = resolveLevel(options);
 

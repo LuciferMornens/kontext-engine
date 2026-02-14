@@ -15,6 +15,7 @@ import { createDatabase } from "../../storage/db.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
+/** Options for the init pipeline. */
 export interface InitOptions {
   log?: (msg: string) => void;
   skipEmbedding?: boolean;
@@ -90,6 +91,7 @@ function formatLanguageSummary(counts: Map<string, number>): string {
 
 // ── Main pipeline ────────────────────────────────────────────────────────────
 
+/** Index a codebase: discover → parse → chunk → embed → store. Runs incrementally on subsequent calls. */
 export async function runInit(
   projectPath: string,
   options: InitOptions = {},

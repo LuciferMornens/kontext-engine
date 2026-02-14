@@ -2,8 +2,10 @@ import type { SearchResult } from "./types.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
+/** Names of available search strategies. */
 export type StrategyName = "vector" | "fts" | "ast" | "path" | "dependency";
 
+/** Results from a single search strategy, ready for fusion. */
 export interface StrategyResult {
   strategy: StrategyName;
   weight: number;
@@ -17,6 +19,7 @@ const K = 60;
 
 // ── Reciprocal Rank Fusion ───────────────────────────────────────────────────
 
+/** Merge results from multiple strategies using Reciprocal Rank Fusion (K=60). */
 export function fusionMerge(
   strategyResults: StrategyResult[],
   limit: number,
