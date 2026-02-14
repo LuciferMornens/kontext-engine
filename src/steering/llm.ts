@@ -207,6 +207,41 @@ export function createAnthropicProvider(apiKey: string): LLMProvider {
   };
 }
 
+// ── Keyword extraction ───────────────────────────────────────────────────────
+
+const STOP_WORDS = new Set([
+  "how", "does", "what", "where", "when", "why", "which", "who", "whom",
+  "is", "are", "was", "were", "be", "been", "being",
+  "do", "did", "doing", "done",
+  "the", "a", "an", "and", "or", "not", "no", "nor",
+  "in", "on", "at", "to", "for", "of", "with", "by", "from", "about",
+  "it", "its", "this", "that", "these", "those",
+  "can", "could", "should", "would", "will", "shall", "may", "might",
+  "has", "have", "had", "having",
+  "i", "me", "my", "we", "our", "you", "your", "he", "she", "they",
+  "find", "show", "get", "tell",
+]);
+
+/**
+ * Extract meaningful search terms from a natural language query.
+ * Removes common English stop words and special characters,
+ * preserving code-relevant identifiers.
+ */
+export function extractSearchTerms(query: string): string {
+  const words = query
+    .replace(/[^a-zA-Z0-9_\s]/g, " ")
+    .split(/\s+/)
+    .filter((w) => w.length >= 2 && !STOP_WORDS.has(w.toLowerCase()));
+
+  // If all words were stop words, fall back to the longest word from the original
+  if (words.length === 0) {
+    const allWords = query.replace(/[^a-zA-Z0-9_\s]/g, " ").split(/\s+/).filter((w) => w.length >= 2);
+    return allWords.sort((a, b) => b.length - a.length)[0] ?? query;
+  }
+
+  return words.join(" ");
+}
+
 // ── Plan step ────────────────────────────────────────────────────────────────
 
 const VALID_STRATEGIES = new Set<string>([
@@ -218,9 +253,12 @@ const VALID_STRATEGIES = new Set<string>([
 ]);
 
 function buildFallbackPlan(query: string): SearchPlan {
+  const keywords = extractSearchTerms(query);
+
   const strategies: StrategyPlan[] = [
-    { strategy: "fts", query, weight: 0.8, reason: "Full-text keyword search" },
-    { strategy: "ast", query, weight: 0.9, reason: "Structural symbol search" },
+    { strategy: "fts", query: keywords, weight: 0.8, reason: "Full-text keyword search" },
+    { strategy: "ast", query: keywords, weight: 0.9, reason: "Structural symbol search" },
+    { strategy: "path", query: keywords, weight: 0.7, reason: "Path keyword search" },
   ];
 
   return {

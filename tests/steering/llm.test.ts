@@ -6,6 +6,7 @@ import {
   planSearch,
   synthesizeExplanation,
   steer,
+  extractSearchTerms,
 } from "../../src/steering/llm.js";
 import type { LLMProvider, StrategyPlan, SteeringResult } from "../../src/steering/llm.js";
 import type { SearchResult } from "../../src/search/types.js";
@@ -260,6 +261,34 @@ describe("planSearch", () => {
     expect(result.strategies.length).toBeGreaterThan(0);
     expect(result.interpretation).toBeTruthy();
   });
+
+  it("fallback plan extracts keywords from NL query", async () => {
+    const mockProvider: LLMProvider = {
+      name: "mock",
+      chat: vi.fn().mockResolvedValue("not valid json"),
+    };
+
+    const result = await planSearch(mockProvider, "how does the indexer work?");
+
+    // FTS query should NOT be the raw NL string — stop words should be removed
+    const ftsStrategy = result.strategies.find((s) => s.strategy === "fts");
+    expect(ftsStrategy).toBeDefined();
+    expect(ftsStrategy?.query).not.toContain("how");
+    expect(ftsStrategy?.query).not.toContain("does");
+    expect(ftsStrategy?.query).toContain("indexer");
+  });
+
+  it("fallback plan includes path strategy", async () => {
+    const mockProvider: LLMProvider = {
+      name: "mock",
+      chat: vi.fn().mockRejectedValue(new Error("API down")),
+    };
+
+    const result = await planSearch(mockProvider, "indexer implementation");
+
+    const strategies = result.strategies.map((s) => s.strategy);
+    expect(strategies).toContain("path");
+  });
 });
 
 // ── synthesizeExplanation ────────────────────────────────────────────────────
@@ -369,5 +398,46 @@ describe("steer", () => {
     expect(result.results).toHaveLength(1);
     expect(result.strategies.length).toBeGreaterThan(0);
     expect(mockSearchExecutor).toHaveBeenCalledOnce();
+  });
+});
+
+// ── extractSearchTerms ───────────────────────────────────────────────────────
+
+describe("extractSearchTerms", () => {
+  it("removes common English stop words", () => {
+    const result = extractSearchTerms("how does the indexer work");
+    expect(result).toBe("indexer work");
+  });
+
+  it("removes question marks and special chars", () => {
+    const result = extractSearchTerms("how does indexer work?");
+    expect(result).toBe("indexer work");
+  });
+
+  it("preserves code-relevant terms", () => {
+    const result = extractSearchTerms("validateToken authentication");
+    expect(result).toContain("validateToken");
+    expect(result).toContain("authentication");
+  });
+
+  it("preserves underscored identifiers", () => {
+    const result = extractSearchTerms("the create_pool function");
+    expect(result).toContain("create_pool");
+  });
+
+  it("returns original query if all words are stop words", () => {
+    const result = extractSearchTerms("how does it do");
+    // Should return something, not empty
+    expect(result.length).toBeGreaterThan(0);
+  });
+
+  it("filters out single-character words", () => {
+    const result = extractSearchTerms("a b indexer c");
+    expect(result).toBe("indexer");
+  });
+
+  it("is case-preserving for identifiers", () => {
+    const result = extractSearchTerms("where is AuthService");
+    expect(result).toContain("AuthService");
   });
 });

@@ -220,6 +220,64 @@ describe("runAsk", () => {
 
       expect(output.text).toContain("No LLM provider configured");
     });
+
+    it("JSON fallback includes warning field", async () => {
+      setupProject();
+      await runInit(tmpDir, { log: () => undefined, skipEmbedding: true });
+
+      const output = await runAsk(tmpDir, "validateToken", {
+        limit: 10,
+        format: "json",
+      });
+
+      expect(output.warning).toBeDefined();
+      expect(output.warning).toContain("No LLM provider configured");
+      expect(output.warning).toContain("CTX_GEMINI_KEY");
+      expect(output.warning).toContain("CTX_OPENAI_KEY");
+      expect(output.warning).toContain("CTX_ANTHROPIC_KEY");
+    });
+
+    it("warning field is absent when LLM provider is configured", async () => {
+      setupProject();
+      await runInit(tmpDir, { log: () => undefined, skipEmbedding: true });
+
+      const output = await runAsk(tmpDir, "validateToken", {
+        limit: 10,
+        format: "json",
+        provider: makeMockProvider(),
+      });
+
+      expect(output.warning).toBeUndefined();
+    });
+  });
+
+  describe("NL query fallback quality", () => {
+    it("natural language fallback query returns results for matching terms", async () => {
+      // Set up project with an indexer directory
+      tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "kontext-ask-nl-"));
+      const indexerDir = path.join(tmpDir, "src", "indexer");
+      fs.mkdirSync(indexerDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(indexerDir, "chunker.ts"),
+        `export function chunkFile(content: string): string[] {
+  const lines = content.split("\\n");
+  return lines;
+}
+`,
+      );
+      await runInit(tmpDir, { log: () => undefined, skipEmbedding: true });
+
+      // Simulate fallback (no provider) with NL query
+      const output = await runAsk(tmpDir, "how does the indexer work?", {
+        limit: 10,
+        format: "json",
+      });
+
+      // Should find the indexer file even with stop words in query
+      expect(output.results.length).toBeGreaterThan(0);
+      const files = output.results.map((r) => r.file);
+      expect(files.some((f) => f.includes("indexer"))).toBe(true);
+    });
   });
 
   describe("error handling", () => {

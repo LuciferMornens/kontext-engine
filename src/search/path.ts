@@ -94,6 +94,7 @@ const SCORE_PARTIAL = 0.7;
  * Search files by keyword matching against file paths.
  * Unlike glob-based pathSearch, this takes plain query terms and does
  * substring matching against indexed file paths.
+ * Supports multi-word queries by tokenizing and matching each term independently.
  *
  * Scoring:
  * - Directory segment exact match → 1.0
@@ -105,16 +106,26 @@ export function pathKeywordSearch(
   query: string,
   limit: number,
 ): SearchResult[] {
-  const queryLower = query.toLowerCase();
+  // Tokenize query into individual terms for independent matching
+  const terms = query
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((t) => t.length >= 2);
+
+  if (terms.length === 0) return [];
+
   const allPaths = db.getAllFilePaths();
 
-  // Score each path
+  // Score each path — take the best score across all query terms
   const scoredPaths: { filePath: string; score: number }[] = [];
 
   for (const filePath of allPaths) {
-    const score = scorePathMatch(filePath, queryLower);
-    if (score > 0) {
-      scoredPaths.push({ filePath, score });
+    let bestScore = 0;
+    for (const term of terms) {
+      bestScore = Math.max(bestScore, scorePathMatch(filePath, term));
+    }
+    if (bestScore > 0) {
+      scoredPaths.push({ filePath, score: bestScore });
     }
   }
 

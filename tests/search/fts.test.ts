@@ -4,7 +4,7 @@ import path from "node:path";
 import os from "node:os";
 import { createDatabase } from "../../src/storage/db.js";
 import type { KontextDatabase } from "../../src/storage/db.js";
-import { ftsSearch } from "../../src/search/fts.js";
+import { ftsSearch, sanitizeFtsQuery } from "../../src/search/fts.js";
 
 // ── Test helpers ─────────────────────────────────────────────────────────────
 
@@ -215,5 +215,135 @@ describe("ftsSearch", () => {
     const results = ftsSearch(db, "token", 1);
 
     expect(results).toHaveLength(1);
+  });
+
+  describe("special character handling", () => {
+    it("does not crash on question mark in query", () => {
+      seedTestData();
+
+      // "how does token work?" → "how does token work" — FTS5 AND means all must match,
+      // but the key assertion is that it does NOT throw a syntax error.
+      expect(() => ftsSearch(db, "how does token work?", 10)).not.toThrow();
+    });
+
+    it("handles parentheses in query", () => {
+      seedTestData();
+
+      // "Pool(url)" → "Pool url" — both tokens exist in create_pool's text
+      const results = ftsSearch(db, "Pool(url)", 10);
+
+      expect(results.length).toBeGreaterThan(0);
+    });
+
+    it("does not crash on double quotes in query", () => {
+      seedTestData();
+
+      expect(() => ftsSearch(db, 'the "token" handler', 10)).not.toThrow();
+    });
+
+    it("does not crash on mixed special characters", () => {
+      seedTestData();
+
+      expect(() => ftsSearch(db, "validate+token? (auth) -test", 10)).not.toThrow();
+    });
+
+    it("returns empty for query that is ONLY special characters", () => {
+      seedTestData();
+
+      const results = ftsSearch(db, "???()\"\"+-:", 10);
+
+      expect(results).toEqual([]);
+    });
+
+    it("does not crash on colon and caret", () => {
+      seedTestData();
+
+      expect(() => ftsSearch(db, "name:token ^important", 10)).not.toThrow();
+    });
+
+    it("finds results after stripping tilde and exclamation", () => {
+      seedTestData();
+
+      // "~token !jwt" → "token jwt" — both exist in validateToken and refreshToken text
+      const results = ftsSearch(db, "~token !jwt", 10);
+
+      expect(results.length).toBeGreaterThan(0);
+    });
+
+    it("preserves prefix wildcard (*) at end of word", () => {
+      seedTestData();
+
+      const results = ftsSearch(db, "auth*", 10);
+
+      expect(results.length).toBeGreaterThan(0);
+    });
+  });
+});
+
+// ── sanitizeFtsQuery tests ───────────────────────────────────────────────────
+
+describe("sanitizeFtsQuery", () => {
+  it("passes through simple words unchanged", () => {
+    expect(sanitizeFtsQuery("hello world")).toBe("hello world");
+  });
+
+  it("strips question marks", () => {
+    expect(sanitizeFtsQuery("how does it work?")).toBe("how does it work");
+  });
+
+  it("strips parentheses", () => {
+    expect(sanitizeFtsQuery("Pool(url)")).toBe("Pool url");
+  });
+
+  it("strips double quotes", () => {
+    expect(sanitizeFtsQuery('the "token" handler')).toBe("the token handler");
+  });
+
+  it("strips colons", () => {
+    expect(sanitizeFtsQuery("name:value")).toBe("name value");
+  });
+
+  it("strips plus and minus operators", () => {
+    expect(sanitizeFtsQuery("+required -excluded")).toBe("required excluded");
+  });
+
+  it("strips carets and tildes", () => {
+    expect(sanitizeFtsQuery("^boost ~near")).toBe("boost near");
+  });
+
+  it("strips exclamation marks", () => {
+    expect(sanitizeFtsQuery("NOT!this")).toBe("NOT this");
+  });
+
+  it("collapses multiple spaces", () => {
+    expect(sanitizeFtsQuery("hello   ?   world")).toBe("hello world");
+  });
+
+  it("returns empty string for only special characters", () => {
+    expect(sanitizeFtsQuery("???()\"\"+-:")).toBe("");
+  });
+
+  it("preserves trailing * for prefix search", () => {
+    expect(sanitizeFtsQuery("auth*")).toBe("auth*");
+  });
+
+  it("strips standalone * not at end of a word", () => {
+    expect(sanitizeFtsQuery("* token")).toBe("token");
+  });
+
+  it("preserves underscores", () => {
+    expect(sanitizeFtsQuery("my_function")).toBe("my_function");
+  });
+
+  it("trims leading and trailing whitespace", () => {
+    expect(sanitizeFtsQuery("  hello  ")).toBe("hello");
+  });
+
+  it("handles curly braces", () => {
+    expect(sanitizeFtsQuery("{hello}")).toBe("hello");
+  });
+
+  it("handles backslashes", () => {
+    expect(sanitizeFtsQuery("path\\to\\file")).toBe("path to file");
   });
 });

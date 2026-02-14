@@ -239,6 +239,37 @@ describe("pathKeywordSearch", () => {
     expect(r.type).toBeDefined();
     expect(r.language).toBeDefined();
   });
+
+  it("handles multi-word query by matching individual terms", () => {
+    // "indexer work" should match paths containing "indexer" even though no path contains "indexer work"
+    // Using "auth middleware" since our fixture has both src/auth/* and src/middleware/*
+    const results = pathKeywordSearch(db, "auth middleware", 10);
+
+    expect(results.length).toBeGreaterThan(0);
+    const files = results.map((r) => r.filePath);
+    // Should find files matching either "auth" or "middleware"
+    expect(files).toContain("src/auth/token.ts");
+    expect(files).toContain("src/middleware/auth.ts");
+  });
+
+  it("multi-word query uses best match score per file", () => {
+    // "auth routes" — "auth" matches src/auth/* as dir exact (1.0), "routes" matches src/routes/* as dir exact (1.0)
+    const results = pathKeywordSearch(db, "auth routes", 10);
+
+    const authResult = results.find((r) => r.filePath === "src/auth/token.ts");
+    const routeResult = results.find((r) => r.filePath === "src/routes/index.ts");
+    expect(authResult).toBeDefined();
+    expect(routeResult).toBeDefined();
+    // Both should have dir-exact score of 1.0
+    expect(authResult?.score).toBe(1.0);
+    expect(routeResult?.score).toBe(1.0);
+  });
+
+  it("returns empty for multi-word query with no matching terms", () => {
+    const results = pathKeywordSearch(db, "zebra elephant", 10);
+
+    expect(results).toEqual([]);
+  });
 });
 
 // ── dependencyTrace tests ────────────────────────────────────────────────────

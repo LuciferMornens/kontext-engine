@@ -6,7 +6,7 @@ import type { KontextDatabase } from "../../storage/db.js";
 import { vectorSearch } from "../../search/vector.js";
 import { ftsSearch } from "../../search/fts.js";
 import { astSearch } from "../../search/ast.js";
-import { pathSearch } from "../../search/path.js";
+import { pathSearch, pathKeywordSearch } from "../../search/path.js";
 import { fusionMerge } from "../../search/fusion.js";
 import { KontextError, SearchError, ErrorCode } from "../../utils/errors.js";
 import { handleCommandError } from "../../utils/error-boundary.js";
@@ -19,6 +19,7 @@ import {
   createAnthropicProvider,
   steer,
   planSearch,
+  extractSearchTerms,
 } from "../../steering/llm.js";
 import type { LLMProvider, StrategyPlan, SearchExecutor } from "../../steering/llm.js";
 import { createLocalEmbedder } from "../../indexer/embedder.js";
@@ -57,6 +58,7 @@ export interface AskOutput {
     totalResults: number;
   };
   fallback?: boolean;
+  warning?: string;
   text?: string;
 }
 
@@ -193,6 +195,17 @@ function createSearchExecutor(db: KontextDatabase): SearchExecutor {
   };
 }
 
+/** Heuristic: extract likely symbol names from a query string */
+function extractSymbolNames(query: string): string[] {
+  const matches = query.match(/[A-Z]?[a-z]+(?:[A-Z][a-z]+)*|[a-z]+(?:_[a-z]+)+|[A-Z][a-zA-Z]+/g);
+  return matches ?? [];
+}
+
+/** Heuristic: check if query looks like a file path pattern (glob) */
+function isPathLike(query: string): boolean {
+  return query.includes("/") || query.includes("*") || query.includes(".");
+}
+
 async function executeStrategy(
   db: KontextDatabase,
   plan: StrategyPlan,
@@ -205,10 +218,29 @@ async function executeStrategy(
     }
     case "fts":
       return ftsSearch(db, plan.query, limit);
-    case "ast":
-      return astSearch(db, { name: plan.query }, limit);
-    case "path":
-      return pathSearch(db, plan.query, limit);
+    case "ast": {
+      // Extract symbol names from query (handles NL and identifier queries)
+      const symbols = extractSymbolNames(plan.query);
+      if (symbols.length === 0) return [];
+
+      const allResults: SearchResult[] = [];
+      for (const name of symbols) {
+        const results = astSearch(db, { name }, limit);
+        allResults.push(...results);
+      }
+
+      // Deduplicate by chunkId
+      const seen = new Set<number>();
+      return allResults.filter((r) => {
+        if (seen.has(r.chunkId)) return false;
+        seen.add(r.chunkId);
+        return true;
+      });
+    }
+    case "path": {
+      if (isPathLike(plan.query)) return pathSearch(db, plan.query, limit);
+      return pathKeywordSearch(db, plan.query, limit);
+    }
     case "dependency":
       return [];
   }
@@ -232,9 +264,11 @@ async function fallbackSearch(
   limit: number,
 ): Promise<AskOutput> {
   const executor = createSearchExecutor(db);
+  const keywords = extractSearchTerms(query);
   const fallbackStrategies: StrategyPlan[] = [
-    { strategy: "fts", query, weight: 0.8, reason: "fallback keyword search" },
-    { strategy: "ast", query, weight: 0.9, reason: "fallback structural search" },
+    { strategy: "fts", query: keywords, weight: 0.8, reason: "fallback keyword search" },
+    { strategy: "ast", query: keywords, weight: 0.9, reason: "fallback structural search" },
+    { strategy: "path", query: keywords, weight: 0.7, reason: "fallback path search" },
   ];
 
   const results = await executor(fallbackStrategies, limit);
@@ -279,6 +313,7 @@ export async function runAsk(
 
     if (!provider) {
       const output = await fallbackSearch(db, query, options.limit);
+      output.warning = FALLBACK_NOTICE;
       if (options.format === "text") {
         output.text = formatTextOutput(output);
       }
@@ -378,6 +413,10 @@ export function registerAskCommand(program: Command): void {
           provider: provider ?? undefined,
           noExplain: opts["explain"] === false,
         });
+
+        if (output.warning) {
+          console.error(`⚠ ${output.warning}`);
+        }
 
         if (output.text) {
           console.log(output.text);
