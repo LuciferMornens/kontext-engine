@@ -35,6 +35,19 @@ function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+async function waitFor(
+  predicate: () => boolean,
+  timeoutMs = 2500,
+  pollIntervalMs = 50,
+): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (predicate()) return true;
+    await sleep(pollIntervalMs);
+  }
+  return predicate();
+}
+
 // ── Tests ────────────────────────────────────────────────────────────────────
 
 describe("createWatcher", () => {
@@ -56,9 +69,11 @@ describe("createWatcher", () => {
 
     // Add a new file
     fs.writeFileSync(path.join(root, "src", "new.ts"), "const a = 1;\n");
-    await sleep(600);
+    const addedDetected = await waitFor(
+      () => changes.some((c) => c.type === "add" && c.path.includes("new.ts")),
+    );
 
-    expect(changes.some((c) => c.type === "add" && c.path.includes("new.ts"))).toBe(true);
+    expect(addedDetected).toBe(true);
   });
 
   it("detects file modification", async () => {
