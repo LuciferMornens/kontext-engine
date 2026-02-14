@@ -75,6 +75,24 @@ export function getEffectiveStrategyWeights(
   };
 }
 
+function normalizeLimit(limit: number): number {
+  if (!Number.isFinite(limit)) return 0;
+  return Math.max(0, Math.trunc(limit));
+}
+
+type StrategySource = "default" | "cli" | "unknown";
+
+export function resolveQueryStrategies(
+  query: string,
+  strategies: StrategyName[],
+  source: StrategySource,
+): StrategyName[] {
+  if (source !== "default") return strategies;
+  if (classifyQuery(query).kind !== "natural_language") return strategies;
+  if (strategies.includes("vector")) return strategies;
+  return [...strategies, "vector"];
+}
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 function truncateSnippet(text: string): string {
@@ -134,6 +152,7 @@ export async function runQuery(
   query: string,
   options: QueryOptions,
 ): Promise<QueryOutput> {
+  const limit = normalizeLimit(options.limit);
   const absoluteRoot = path.resolve(projectPath);
   const dbPath = path.join(absoluteRoot, CTX_DIR, DB_FILENAME);
 
@@ -148,9 +167,9 @@ export async function runQuery(
   const db = createDatabase(dbPath);
 
   try {
-    const strategyResults = await runStrategies(db, query, options);
+    const strategyResults = await runStrategies(db, query, { ...options, limit });
     const pathBoostTerms = extractPathBoostTerms(query);
-    const fused = fusionMergeWithPathBoost(strategyResults, options.limit, pathBoostTerms);
+    const fused = fusionMergeWithPathBoost(strategyResults, limit, pathBoostTerms);
     const outputResults = fused.map(toOutputResult);
 
     const searchTimeMs = Math.round(performance.now() - start);
@@ -279,17 +298,24 @@ export function registerQueryCommand(program: Command): void {
     .option("--language <lang>", "Filter by language")
     .option("-f, --format <fmt>", "Output format: json|text", "json")
     .option("--no-vectors", "Skip vector search")
-    .action(async (query: string, opts: Record<string, string>) => {
+    .action(async (query: string, opts: Record<string, string>, command: Command) => {
       const projectPath = process.cwd();
       const verbose = program.opts()["verbose"] === true;
       const logger = createLogger({ level: verbose ? LogLevel.DEBUG : LogLevel.INFO });
-      const strategies = (opts["strategy"] ?? "fts,ast,path")
+      const strategySource = command.getOptionValueSource("strategy");
+      const parsedStrategies = (opts["strategy"] ?? "fts,ast,path")
         .split(",")
         .map((s) => s.trim()) as StrategyName[];
+      const strategies = resolveQueryStrategies(
+        query,
+        parsedStrategies,
+        strategySource === "default" ? "default" : strategySource ? "cli" : "unknown",
+      );
+      const limit = normalizeLimit(parseInt(opts["limit"] ?? "10", 10));
 
       try {
         const output = await runQuery(projectPath, query, {
-          limit: parseInt(opts["limit"] ?? "10", 10),
+          limit,
           strategies,
           language: opts["language"] as string | undefined,
           format: (opts["format"] ?? "json") as "json" | "text",

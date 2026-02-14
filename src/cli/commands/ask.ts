@@ -71,6 +71,11 @@ const SNIPPET_MAX_LENGTH = 200;
 const FALLBACK_NOTICE =
   "No LLM provider configured. Set CTX_GEMINI_KEY, CTX_OPENAI_KEY, or CTX_ANTHROPIC_KEY. Running basic search instead.";
 
+function normalizeLimit(limit: number): number {
+  if (!Number.isFinite(limit)) return 0;
+  return Math.max(0, Math.trunc(limit));
+}
+
 // ── Provider detection ───────────────────────────────────────────────────────
 
 const PROVIDER_ENV_MAP: Record<string, string> = {
@@ -293,6 +298,7 @@ export async function runAsk(
   query: string,
   options: AskOptions,
 ): Promise<AskOutput> {
+  const limit = normalizeLimit(options.limit);
   const absoluteRoot = path.resolve(projectPath);
   const dbPath = path.join(absoluteRoot, CTX_DIR, DB_FILENAME);
 
@@ -309,7 +315,7 @@ export async function runAsk(
     const provider = options.provider ?? null;
 
     if (!provider) {
-      const output = await fallbackSearch(db, query, options.limit);
+      const output = await fallbackSearch(db, query, limit);
       output.warning = FALLBACK_NOTICE;
       if (options.format === "text") {
         output.text = formatTextOutput(output);
@@ -320,10 +326,10 @@ export async function runAsk(
     const executor = createSearchExecutor(db, query);
 
     if (options.noExplain) {
-      return await runNoExplain(provider, query, options, executor);
+      return await runNoExplain(provider, query, limit, options, executor);
     }
 
-    return await runWithSteering(provider, query, options, executor);
+    return await runWithSteering(provider, query, limit, options, executor);
   } finally {
     db.close();
   }
@@ -332,11 +338,12 @@ export async function runAsk(
 async function runNoExplain(
   provider: LLMProvider,
   query: string,
+  limit: number,
   options: AskOptions,
   executor: SearchExecutor,
 ): Promise<AskOutput> {
   const plan = await planSearch(provider, query);
-  const results = await executor(plan.strategies, options.limit);
+  const results = await executor(plan.strategies, limit);
 
   const output: AskOutput = {
     query,
@@ -361,10 +368,11 @@ async function runNoExplain(
 async function runWithSteering(
   provider: LLMProvider,
   query: string,
+  limit: number,
   options: AskOptions,
   executor: SearchExecutor,
 ): Promise<AskOutput> {
-  const result = await steer(provider, query, options.limit, executor);
+  const result = await steer(provider, query, limit, executor);
 
   const output: AskOutput = {
     query,
@@ -402,10 +410,11 @@ export function registerAskCommand(program: Command): void {
       const logger = createLogger({ level: verbose ? LogLevel.DEBUG : LogLevel.INFO });
       const providerName = opts["provider"] as string | undefined;
       const provider = detectProvider(providerName);
+      const limit = normalizeLimit(parseInt(String(opts["limit"] ?? "10"), 10));
 
       try {
         const output = await runAsk(projectPath, query, {
-          limit: parseInt(String(opts["limit"] ?? "10"), 10),
+          limit,
           format: (opts["format"] ?? "text") as "json" | "text",
           provider: provider ?? undefined,
           noExplain: opts["explain"] === false,

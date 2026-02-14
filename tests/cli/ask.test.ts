@@ -221,6 +221,32 @@ describe("runAsk", () => {
       expect(output.stats.strategies).toContain("vector");
     });
 
+    it("returns zero results when limit is 0", async () => {
+      setupProject();
+      await runInit(tmpDir, { log: () => undefined, skipEmbedding: true });
+
+      const output = await runAsk(tmpDir, "validateToken", {
+        limit: 0,
+        format: "json",
+      });
+
+      expect(output.results).toEqual([]);
+      expect(output.stats.totalResults).toBe(0);
+    });
+
+    it("returns zero results when limit is negative", async () => {
+      setupProject();
+      await runInit(tmpDir, { log: () => undefined, skipEmbedding: true });
+
+      const output = await runAsk(tmpDir, "validateToken", {
+        limit: -1,
+        format: "json",
+      });
+
+      expect(output.results).toEqual([]);
+      expect(output.stats.totalResults).toBe(0);
+    });
+
     it("text fallback includes notice message", async () => {
       setupProject();
       await runInit(tmpDir, { log: () => undefined, skipEmbedding: true });

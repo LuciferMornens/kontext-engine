@@ -2,7 +2,11 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { runQuery, getEffectiveStrategyWeights } from "../../src/cli/commands/query.js";
+import {
+  runQuery,
+  getEffectiveStrategyWeights,
+  resolveQueryStrategies,
+} from "../../src/cli/commands/query.js";
 import type { QueryOptions, QueryOutput } from "../../src/cli/commands/query.js";
 import { runInit } from "../../src/cli/commands/init.js";
 
@@ -102,6 +106,24 @@ describe("ctx query", () => {
       expect(weights.ast).toBeGreaterThan(weights.fts);
       expect(weights.ast).toBeGreaterThan(weights.vector);
     });
+
+    it("adds vector for NL queries when using default strategies", () => {
+      const strategies = resolveQueryStrategies(
+        "how does search work?",
+        ["fts", "ast", "path"],
+        "default",
+      );
+      expect(strategies).toContain("vector");
+    });
+
+    it("does not auto-add vector when strategies are explicitly set", () => {
+      const strategies = resolveQueryStrategies(
+        "how does search work?",
+        ["fts", "ast", "path"],
+        "cli",
+      );
+      expect(strategies).toEqual(["fts", "ast", "path"]);
+    });
   });
 
   describe("JSON output", () => {
@@ -157,6 +179,18 @@ describe("ctx query", () => {
       const output = await runQueryCapture("token", { limit: 1 });
 
       expect(output.results.length).toBeLessThanOrEqual(1);
+    });
+
+    it("returns zero results when limit is 0", async () => {
+      const output = await runQueryCapture("token", { limit: 0 });
+      expect(output.results).toEqual([]);
+      expect(output.stats.totalResults).toBe(0);
+    });
+
+    it("returns zero results when limit is negative", async () => {
+      const output = await runQueryCapture("token", { limit: -1 });
+      expect(output.results).toEqual([]);
+      expect(output.stats.totalResults).toBe(0);
     });
   });
 
