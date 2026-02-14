@@ -44,7 +44,7 @@ export type SearchExecutor = (
 // ── Constants ────────────────────────────────────────────────────────────────
 
 const GEMINI_URL =
-  "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent";
+  "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent";
 const OPENAI_URL = "https://api.openai.com/v1/chat/completions";
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 
@@ -126,7 +126,7 @@ export function createOpenAIProvider(apiKey: string): LLMProvider {
           Authorization: `Bearer ${apiKey}`,
         },
         body: JSON.stringify({
-          model: "gpt-4o-mini",
+          model: "gpt-5-mini",
           messages: messages.map((m) => ({
             role: m.role,
             content: m.content,

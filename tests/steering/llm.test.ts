@@ -128,7 +128,7 @@ describe("createOpenAIProvider", () => {
     expect(headers["Authorization"]).toBe("Bearer test-key");
 
     const body = JSON.parse(opts?.body as string);
-    expect(body.model).toBe("gpt-4o-mini");
+    expect(body.model).toBe("gpt-5-mini");
     expect(body.messages).toHaveLength(1);
   });
 
