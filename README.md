@@ -305,7 +305,7 @@ Debug logging is also enabled via `CTX_DEBUG=1`.
 
 ## Configuration
 
-Configuration lives in `.ctx/config.json`, created automatically by `ctx init`.
+Configuration lives in `.ctx/config.json`, created automatically by `ctx init`. Manage it with `ctx config show`, `ctx config get <key>`, `ctx config set <key> <value>`, or `ctx config reset [key]`.
 
 ```json
 {
@@ -335,6 +335,46 @@ Configuration lives in `.ctx/config.json`, created automatically by `ctx init`.
   }
 }
 ```
+
+### Configuration reference
+
+#### `embedder` - Vector embedding settings
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `embedder.provider` | `"local"` \| `"openai"` \| `"voyage"` | `"local"` | Which embedding provider to use. `local` runs offline on CPU; `openai` and `voyage` call remote APIs. |
+| `embedder.model` | string | `"Xenova/all-MiniLM-L6-v2"` | Model name. Only change this if you know the provider supports it. |
+| `embedder.dimensions` | number | `384` | Vector dimensions. Must match the model (`384` for local, `1024` for voyage-code-3, configurable for OpenAI). |
+
+Switching providers requires rebuilding the index: `rm -f .ctx/index.db && ctx init`. Running `ctx init` after a provider change will show a dimension mismatch error with instructions.
+
+#### `search` - Search behavior
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `search.defaultLimit` | number | `10` | How many results to return when `-l` is not specified. |
+| `search.strategies` | string[] | `["vector", "fts", "ast", "path"]` | Which search strategies to run. Order does not matter; results are fused. |
+| `search.weights.vector` | number | `1.0` | Weight for vector (semantic) search in RRF fusion. Higher = more influence on final ranking. |
+| `search.weights.fts` | number | `0.8` | Weight for FTS5 full-text search. |
+| `search.weights.ast` | number | `0.9` | Weight for AST symbol name matching. |
+| `search.weights.path` | number | `0.7` | Weight for file path matching. |
+| `search.weights.dependency` | number | `0.6` | Weight for import/dependency graph traversal. |
+
+Weights are relative to each other. A strategy with weight `1.0` has more influence than one with `0.6`. Set a weight to `0` to effectively disable a strategy without removing it from the list.
+
+#### `watch` - File watcher settings
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `watch.debounceMs` | number | `500` | Milliseconds to wait after a file change before re-indexing. Prevents rapid-fire re-indexes during saves. |
+| `watch.ignored` | string[] | `[]` | Additional glob patterns to ignore (on top of `.gitignore` and built-in ignores like `node_modules`, `.git`). Example: `["*.generated.ts", "dist/**"]` |
+
+#### `llm` - LLM provider override for `ctx ask`
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `llm.provider` | `"gemini"` \| `"openai"` \| `"anthropic"` \| `null` | `null` | Force a specific LLM provider for `ctx ask`. When `null`, auto-detects by checking which API key is set (in order: Gemini, OpenAI, Anthropic). |
+| `llm.model` | string \| `null` | `null` | Override the default model for the chosen provider. When `null`, uses Gemini 3 Flash, GPT-5-mini, or Claude 3.5 Haiku respectively. |
 
 ### Embedder providers
 
