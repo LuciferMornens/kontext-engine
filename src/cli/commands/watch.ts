@@ -10,6 +10,9 @@ import { chunkFile } from "../../indexer/chunker.js";
 import type { Chunk } from "../../indexer/chunker.js";
 import { prepareChunkText, createLocalEmbedder } from "../../indexer/embedder.js";
 import type { Embedder } from "../../indexer/embedder.js";
+import { KontextError, IndexError, ErrorCode } from "../../utils/errors.js";
+import { handleCommandError } from "../../utils/error-boundary.js";
+import { createLogger, LogLevel } from "../../utils/logger.js";
 import { LANGUAGE_MAP } from "../../indexer/discovery.js";
 import { runInit } from "./init.js";
 
@@ -201,8 +204,9 @@ export async function runWatch(
 
   // Validate .ctx/ exists
   if (!fs.existsSync(dbPath)) {
-    throw new Error(
+    throw new KontextError(
       `Project not initialized. Run "ctx init" first or use --init flag. (${CTX_DIR}/${DB_FILENAME} not found)`,
+      ErrorCode.NOT_INITIALIZED,
     );
   }
 
@@ -277,6 +281,8 @@ export function registerWatchCommand(program: Command): void {
     .option("--embed", "Enable embedding during watch (slower)")
     .action(async (inputPath: string | undefined, opts: Record<string, string | boolean>) => {
       const projectPath = inputPath ?? process.cwd();
+      const verbose = program.opts()["verbose"] === true;
+      const logger = createLogger({ level: verbose ? LogLevel.DEBUG : LogLevel.INFO });
       const skipEmbedding = opts["embed"] !== true;
 
       try {
@@ -293,11 +299,13 @@ export function registerWatchCommand(program: Command): void {
         process.on("SIGINT", shutdown);
         process.on("SIGTERM", shutdown);
       } catch (err) {
-        console.error(
-          "Error:",
-          err instanceof Error ? err.message : String(err),
-        );
-        process.exitCode = 1;
+        const wrapped = err instanceof KontextError ? err
+          : new IndexError(
+              err instanceof Error ? err.message : String(err),
+              ErrorCode.WATCHER_FAILED,
+              err instanceof Error ? err : undefined,
+            );
+        process.exitCode = handleCommandError(wrapped, logger, verbose);
       }
     });
 }

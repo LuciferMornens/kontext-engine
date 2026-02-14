@@ -2,6 +2,8 @@ import type { Command } from "commander";
 import fs from "node:fs";
 import path from "node:path";
 import { createDatabase } from "../../storage/db.js";
+import { handleCommandError } from "../../utils/error-boundary.js";
+import { createLogger, LogLevel } from "../../utils/logger.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -169,15 +171,14 @@ export function registerStatusCommand(program: Command): void {
     .description("Show index statistics")
     .action(async (inputPath?: string) => {
       const projectPath = inputPath ?? process.cwd();
+      const verbose = program.opts()["verbose"] === true;
+      const logger = createLogger({ level: verbose ? LogLevel.DEBUG : LogLevel.INFO });
+
       try {
         const output = await runStatus(projectPath);
         console.log(output.text);
       } catch (err) {
-        console.error(
-          "Error:",
-          err instanceof Error ? err.message : String(err),
-        );
-        process.exitCode = 1;
+        process.exitCode = handleCommandError(err, logger, verbose);
       }
     });
 }

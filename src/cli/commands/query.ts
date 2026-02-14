@@ -6,6 +6,9 @@ import type { KontextDatabase } from "../../storage/db.js";
 import { vectorSearch } from "../../search/vector.js";
 import { ftsSearch } from "../../search/fts.js";
 import { astSearch } from "../../search/ast.js";
+import { KontextError, SearchError, ErrorCode } from "../../utils/errors.js";
+import { handleCommandError } from "../../utils/error-boundary.js";
+import { createLogger, LogLevel } from "../../utils/logger.js";
 import { pathSearch } from "../../search/path.js";
 import { fusionMerge } from "../../search/fusion.js";
 import type { StrategyResult, StrategyName } from "../../search/fusion.js";
@@ -119,8 +122,9 @@ export async function runQuery(
   const dbPath = path.join(absoluteRoot, CTX_DIR, DB_FILENAME);
 
   if (!fs.existsSync(dbPath)) {
-    throw new Error(
+    throw new KontextError(
       `Project not initialized. Run "ctx init" first. (${CTX_DIR}/${DB_FILENAME} not found)`,
+      ErrorCode.NOT_INITIALIZED,
     );
   }
 
@@ -258,6 +262,8 @@ export function registerQueryCommand(program: Command): void {
     .option("--no-vectors", "Skip vector search")
     .action(async (query: string, opts: Record<string, string>) => {
       const projectPath = process.cwd();
+      const verbose = program.opts()["verbose"] === true;
+      const logger = createLogger({ level: verbose ? LogLevel.DEBUG : LogLevel.INFO });
       const strategies = (opts["strategy"] ?? "fts,ast")
         .split(",")
         .map((s) => s.trim()) as StrategyName[];
@@ -276,11 +282,13 @@ export function registerQueryCommand(program: Command): void {
           console.log(JSON.stringify(output, null, 2));
         }
       } catch (err) {
-        console.error(
-          "Error:",
-          err instanceof Error ? err.message : String(err),
-        );
-        process.exitCode = 1;
+        const wrapped = err instanceof KontextError ? err
+          : new SearchError(
+              err instanceof Error ? err.message : String(err),
+              ErrorCode.SEARCH_FAILED,
+              err instanceof Error ? err : undefined,
+            );
+        process.exitCode = handleCommandError(wrapped, logger, verbose);
       }
     });
 }

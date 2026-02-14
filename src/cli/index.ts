@@ -17,7 +17,8 @@ const program = new Command();
 program
   .name("ctx")
   .description("Kontext — Context engine for AI coding agents")
-  .version("0.1.0");
+  .version("0.1.0")
+  .option("--verbose", "Enable verbose/debug output");
 
 registerInitCommand(program);
 registerQueryCommand(program);

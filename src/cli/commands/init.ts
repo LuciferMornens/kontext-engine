@@ -8,6 +8,9 @@ import { chunkFile } from "../../indexer/chunker.js";
 import type { Chunk } from "../../indexer/chunker.js";
 import { prepareChunkText, createLocalEmbedder } from "../../indexer/embedder.js";
 import type { Embedder } from "../../indexer/embedder.js";
+import { IndexError, ErrorCode } from "../../utils/errors.js";
+import { handleCommandError } from "../../utils/error-boundary.js";
+import { createLogger, LogLevel } from "../../utils/logger.js";
 import { createDatabase } from "../../storage/db.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -295,14 +298,19 @@ export function registerInitCommand(program: Command): void {
     .description("Index current directory or specified path")
     .action(async (inputPath?: string) => {
       const projectPath = inputPath ?? process.cwd();
+      const verbose = program.opts()["verbose"] === true;
+      const logger = createLogger({ level: verbose ? LogLevel.DEBUG : LogLevel.INFO });
+
       try {
         await runInit(projectPath);
       } catch (err) {
-        console.error(
-          "Error:",
-          err instanceof Error ? err.message : String(err),
-        );
-        process.exitCode = 1;
+        const wrapped = err instanceof IndexError ? err
+          : new IndexError(
+              err instanceof Error ? err.message : String(err),
+              ErrorCode.INDEX_FAILED,
+              err instanceof Error ? err : undefined,
+            );
+        process.exitCode = handleCommandError(wrapped, logger, verbose);
       }
     });
 }

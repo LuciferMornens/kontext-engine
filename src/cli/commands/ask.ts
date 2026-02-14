@@ -8,6 +8,9 @@ import { ftsSearch } from "../../search/fts.js";
 import { astSearch } from "../../search/ast.js";
 import { pathSearch } from "../../search/path.js";
 import { fusionMerge } from "../../search/fusion.js";
+import { KontextError, SearchError, ErrorCode } from "../../utils/errors.js";
+import { handleCommandError } from "../../utils/error-boundary.js";
+import { createLogger, LogLevel } from "../../utils/logger.js";
 import type { StrategyResult } from "../../search/fusion.js";
 import type { SearchResult } from "../../search/types.js";
 import {
@@ -260,8 +263,9 @@ export async function runAsk(
   const dbPath = path.join(absoluteRoot, CTX_DIR, DB_FILENAME);
 
   if (!fs.existsSync(dbPath)) {
-    throw new Error(
+    throw new KontextError(
       `Project not initialized. Run "ctx init" first. (${CTX_DIR}/${DB_FILENAME} not found)`,
+      ErrorCode.NOT_INITIALIZED,
     );
   }
 
@@ -359,6 +363,8 @@ export function registerAskCommand(program: Command): void {
     .option("--no-explain", "Skip explanation, just return search results")
     .action(async (query: string, opts: Record<string, string | boolean>) => {
       const projectPath = process.cwd();
+      const verbose = program.opts()["verbose"] === true;
+      const logger = createLogger({ level: verbose ? LogLevel.DEBUG : LogLevel.INFO });
       const providerName = opts["provider"] as string | undefined;
       const provider = detectProvider(providerName);
 
@@ -376,11 +382,13 @@ export function registerAskCommand(program: Command): void {
           console.log(JSON.stringify(output, null, 2));
         }
       } catch (err) {
-        console.error(
-          "Error:",
-          err instanceof Error ? err.message : String(err),
-        );
-        process.exitCode = 1;
+        const wrapped = err instanceof KontextError ? err
+          : new SearchError(
+              err instanceof Error ? err.message : String(err),
+              ErrorCode.SEARCH_FAILED,
+              err instanceof Error ? err : undefined,
+            );
+        process.exitCode = handleCommandError(wrapped, logger, verbose);
       }
     });
 }

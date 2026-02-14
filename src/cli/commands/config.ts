@@ -1,6 +1,9 @@
 import type { Command } from "commander";
 import fs from "node:fs";
 import path from "node:path";
+import { ConfigError, ErrorCode } from "../../utils/errors.js";
+import { handleCommandError } from "../../utils/error-boundary.js";
+import { createLogger, LogLevel } from "../../utils/logger.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -96,8 +99,9 @@ function resolveCtxDir(projectPath: string): string {
   const ctxDir = path.join(absoluteRoot, CTX_DIR);
 
   if (!fs.existsSync(ctxDir)) {
-    throw new Error(
+    throw new ConfigError(
       `Project not initialized. Run "ctx init" first. (${CTX_DIR}/ not found)`,
+      ErrorCode.NOT_INITIALIZED,
     );
   }
 
@@ -228,7 +232,7 @@ export function runConfigSet(
   // Validate if rule exists
   const rule = VALIDATION_RULES[key];
   if (rule && !rule.validate(value)) {
-    throw new Error(`Invalid value for "${key}": ${rule.message}`);
+    throw new ConfigError(`Invalid value for "${key}": ${rule.message}`, ErrorCode.CONFIG_INVALID);
   }
 
   setNestedValue(config as unknown as Record<string, unknown>, key, value);
@@ -247,6 +251,12 @@ export function registerConfigCommand(program: Command): void {
     .command("config")
     .description("Show or modify configuration");
 
+  function configErrorHandler(err: unknown): void {
+    const verbose = program.opts()["verbose"] === true;
+    const logger = createLogger({ level: verbose ? LogLevel.DEBUG : LogLevel.INFO });
+    process.exitCode = handleCommandError(err, logger, verbose);
+  }
+
   cmd
     .command("show")
     .description("Show current configuration")
@@ -255,8 +265,7 @@ export function registerConfigCommand(program: Command): void {
         const output = runConfigShow(process.cwd());
         console.log(output.text);
       } catch (err) {
-        console.error("Error:", err instanceof Error ? err.message : String(err));
-        process.exitCode = 1;
+        configErrorHandler(err);
       }
     });
 
@@ -270,8 +279,7 @@ export function registerConfigCommand(program: Command): void {
           typeof value === "object" ? JSON.stringify(value, null, 2) : String(value),
         );
       } catch (err) {
-        console.error("Error:", err instanceof Error ? err.message : String(err));
-        process.exitCode = 1;
+        configErrorHandler(err);
       }
     });
 
@@ -283,8 +291,7 @@ export function registerConfigCommand(program: Command): void {
         runConfigSet(process.cwd(), key, value);
         console.log(`Set ${key} = ${value}`);
       } catch (err) {
-        console.error("Error:", err instanceof Error ? err.message : String(err));
-        process.exitCode = 1;
+        configErrorHandler(err);
       }
     });
 
@@ -296,8 +303,7 @@ export function registerConfigCommand(program: Command): void {
         runConfigReset(process.cwd());
         console.log("Configuration reset to defaults.");
       } catch (err) {
-        console.error("Error:", err instanceof Error ? err.message : String(err));
-        process.exitCode = 1;
+        configErrorHandler(err);
       }
     });
 }
