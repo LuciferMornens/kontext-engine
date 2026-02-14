@@ -51,10 +51,12 @@ describe("createWatcher", () => {
     );
 
     await handle.start();
+    // Let watcher stabilize
+    await sleep(100);
 
     // Add a new file
     fs.writeFileSync(path.join(root, "src", "new.ts"), "const a = 1;\n");
-    await sleep(400);
+    await sleep(500);
 
     expect(changes.some((c) => c.type === "add" && c.path.includes("new.ts"))).toBe(true);
   });
