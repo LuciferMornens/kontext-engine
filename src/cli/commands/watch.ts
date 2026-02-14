@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { createDatabase } from "../../storage/db.js";
 import type { KontextDatabase } from "../../storage/db.js";
+import type { IndexEmbedderMetadata } from "../../storage/db.js";
 import { createWatcher } from "../../watcher/watcher.js";
 import type { FileChange, WatcherHandle } from "../../watcher/watcher.js";
 import { initParser, parseFile } from "../../indexer/parser.js";
@@ -68,6 +69,17 @@ interface ReindexResult {
   filesProcessed: number;
   chunksUpdated: number;
   durationMs: number;
+}
+
+function isSameEmbedderConfig(
+  a: IndexEmbedderMetadata,
+  b: { provider: string; model: string; dimensions: number },
+): boolean {
+  return (
+    a.provider === b.provider &&
+    a.model === b.model &&
+    a.dimensions === b.dimensions
+  );
 }
 
 async function reindexChanges(
@@ -233,6 +245,26 @@ export async function runWatch(
   // Open DB
   const embedderConfig = getProjectEmbedderConfig(absoluteRoot);
   const db = createDatabase(dbPath, embedderConfig.dimensions);
+  const existingEmbedder = db.getIndexEmbedder();
+  if (existingEmbedder) {
+    if (!isSameEmbedderConfig(existingEmbedder, embedderConfig)) {
+      db.close();
+      throw new IndexError(
+        `Index embedder mismatch: index uses ${existingEmbedder.provider} (${existingEmbedder.model}, ${existingEmbedder.dimensions} dims) but config requests ${embedderConfig.provider} (${embedderConfig.model}, ${embedderConfig.dimensions} dims). Rebuild the index.`,
+        ErrorCode.CONFIG_INVALID,
+      );
+    }
+  } else {
+    const isEmptyIndex =
+      db.getFileCount() === 0 && db.getChunkCount() === 0 && db.getVectorCount() === 0;
+    if (isEmptyIndex) {
+      db.setIndexEmbedder({
+        provider: embedderConfig.provider,
+        model: embedderConfig.model,
+        dimensions: embedderConfig.dimensions,
+      });
+    }
+  }
 
   // Create watcher
   let watcherHandle: WatcherHandle | null = null;

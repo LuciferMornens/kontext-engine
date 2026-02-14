@@ -72,6 +72,7 @@ const PATH_BOOST_PARTIAL = 1.2;
 const IMPORT_PENALTY = 0.5;
 const TEST_FILE_PENALTY = 0.65;
 const SMALL_SNIPPET_PENALTY = 0.75;
+const DATA_LITERAL_PENALTY = 0.7;
 const PUBLIC_API_BOOST = 1.12;
 
 const TEST_FILE_DIRECTORY_PATTERN = /(?:^|\/)(?:tests|__tests__)(?:\/|$)/;
@@ -96,8 +97,9 @@ export function extractPathBoostTerms(query: string): string[] {
  * 2. Import chunk deprioritization when non-import alternatives exist
  * 3. Test file deprioritization when non-test alternatives exist
  * 4. Tiny snippet deprioritization (1–3 lines) when larger alternatives exist
- * 5. Mild public API boost for exported symbols
- * 6. File diversity diminishing returns to avoid over-concentration per file
+ * 5. Data-literal deprioritization for constant lookup/config maps
+ * 6. Mild public API boost for exported symbols
+ * 7. File diversity diminishing returns to avoid over-concentration per file
  * Re-normalizes scores to 0–1 after all adjustments.
  */
 export function fusionMergeWithPathBoost(
@@ -117,9 +119,10 @@ export function fusionMergeWithPathBoost(
   const importAdjusted = applyImportDeprioritization(boosted);
   const testAdjusted = applyTestFileDeprioritization(importAdjusted);
   const snippetAdjusted = applySmallSnippetDeprioritization(testAdjusted);
+  const dataLiteralAdjusted = applyDataLiteralDeprioritization(snippetAdjusted);
 
   // 3. Boost likely public API symbols
-  const boostedApi = applyPublicApiBoost(snippetAdjusted);
+  const boostedApi = applyPublicApiBoost(dataLiteralAdjusted);
 
   // 4. Apply file diversity diminishing returns based on current ranking
   const adjusted = applyFileDiversityDiminishingReturns(boostedApi);
@@ -239,6 +242,25 @@ function applySmallSnippetDeprioritization(results: SearchResult[]): SearchResul
   });
 }
 
+/** Penalize data-heavy constant literals when non-literal alternatives exist. */
+function applyDataLiteralDeprioritization(results: SearchResult[]): SearchResult[] {
+  const hasNonDataLiteral = results.some((r) => !isDataLiteralChunk(r));
+  if (!hasNonDataLiteral) return results;
+
+  const maxNonDataScore = Math.max(
+    ...results.filter((r) => !isDataLiteralChunk(r)).map((r) => r.score),
+    0,
+  );
+  if (maxNonDataScore === 0) return results;
+
+  return results.map((r) => {
+    if (isDataLiteralChunk(r)) {
+      return { ...r, score: r.score * DATA_LITERAL_PENALTY };
+    }
+    return r;
+  });
+}
+
 /** Apply mild boost to exported symbols that are likely part of the public API. */
 function applyPublicApiBoost(results: SearchResult[]): SearchResult[] {
   return results.map((r) => {
@@ -289,6 +311,39 @@ function isPublicApiSymbol(result: SearchResult): boolean {
 
   const textStart = result.text.trimStart().toLowerCase();
   return textStart.startsWith("export ");
+}
+
+/** Heuristic for constant chunks that are mostly object/array/string literal data. */
+function isDataLiteralChunk(result: SearchResult): boolean {
+  if (result.type !== "constant") return false;
+
+  const text = result.text;
+  const lines = text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+  if (lines.length === 0) return false;
+
+  const keyValueLineCount = lines.filter((line) =>
+    /['"`]?[A-Za-z0-9_-]+['"`]?\s*:\s*/.test(line),
+  ).length;
+  const quoteCount = (text.match(/["'`]/g) ?? []).length;
+  const colonCount = (text.match(/:/g) ?? []).length;
+  const structuralCount = quoteCount + colonCount;
+  const nonWhitespaceLength = text.replace(/\s+/g, "").length;
+  const structuralDensity = structuralCount / Math.max(nonWhitespaceLength, 1);
+
+  const hasLiteralShape =
+    (text.includes("{") && text.includes("}")) ||
+    (text.includes("[") && text.includes("]"));
+  const kvLineRatio = keyValueLineCount / lines.length;
+
+  return (
+    hasLiteralShape &&
+    keyValueLineCount >= 2 &&
+    kvLineRatio >= 0.35 &&
+    structuralDensity >= 0.04
+  );
 }
 
 /** Score factor by Nth occurrence from the same file. */

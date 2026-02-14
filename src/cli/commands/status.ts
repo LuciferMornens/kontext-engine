@@ -23,6 +23,8 @@ export interface StatusOutput {
   lastIndexed: string | null;
   languages: Map<string, number>;
   config: ProjectConfig | null;
+  indexEmbedder: ProjectConfig | null;
+  embedderWarning: string | null;
   text: string;
 }
 
@@ -121,15 +123,62 @@ function formatStatus(projectPath: string, output: StatusOutput): string {
     }
   }
 
-  if (output.config) {
-    lines.push("");
-    lines.push(
-      `  Embedder: ${output.config.provider} (${output.config.model}, ${output.config.dimensions} dims)`,
-    );
+  const hasConfig = output.config !== null;
+  const hasIndexEmbedder = output.indexEmbedder !== null;
+
+  if (hasConfig || hasIndexEmbedder) lines.push("");
+
+  if (hasConfig && hasIndexEmbedder) {
+    const config = output.config;
+    const indexEmbedder = output.indexEmbedder;
+    if (!config || !indexEmbedder) {
+      lines.push("  Embedder: unknown");
+    } else if (isSameEmbedder(config, indexEmbedder)) {
+      lines.push(
+        `  Embedder: ${indexEmbedder.provider} (${indexEmbedder.model}, ${indexEmbedder.dimensions} dims)`,
+      );
+    } else {
+      lines.push(
+        `  Index embedder:  ${indexEmbedder.provider} (${indexEmbedder.model}, ${indexEmbedder.dimensions} dims)`,
+      );
+      lines.push(
+        `  Config embedder: ${config.provider} (${config.model}, ${config.dimensions} dims)`,
+      );
+    }
+  } else if (hasIndexEmbedder) {
+    const indexEmbedder = output.indexEmbedder;
+    if (!indexEmbedder) {
+      lines.push("  Index embedder: unknown");
+    } else {
+      lines.push(
+        `  Index embedder: ${indexEmbedder.provider} (${indexEmbedder.model}, ${indexEmbedder.dimensions} dims)`,
+      );
+    }
+  } else if (hasConfig) {
+    const config = output.config;
+    if (!config) {
+      lines.push("  Config embedder: unknown");
+    } else {
+      lines.push(
+        `  Config embedder: ${config.provider} (${config.model}, ${config.dimensions} dims)`,
+      );
+    }
+  }
+
+  if (output.embedderWarning) {
+    lines.push(`  Warning: ${output.embedderWarning}`);
   }
 
   lines.push("");
   return lines.join("\n");
+}
+
+function isSameEmbedder(a: ProjectConfig, b: ProjectConfig): boolean {
+  return (
+    a.provider === b.provider &&
+    a.model === b.model &&
+    a.dimensions === b.dimensions
+  );
 }
 
 // ── Main status function ─────────────────────────────────────────────────────
@@ -150,6 +199,8 @@ export async function runStatus(projectPath: string): Promise<StatusOutput> {
       lastIndexed: null,
       languages: new Map(),
       config: null,
+      indexEmbedder: null,
+      embedderWarning: null,
       text: formatNotInitialized(absoluteRoot),
     };
     return output;
@@ -164,7 +215,12 @@ export async function runStatus(projectPath: string): Promise<StatusOutput> {
     const languages = db.getLanguageBreakdown();
     const lastIndexed = db.getLastIndexed();
     const config = readConfig(ctxDir);
+    const indexEmbedder = db.getIndexEmbedder();
     const dbSizeBytes = fs.statSync(dbPath).size;
+    const embedderWarning =
+      config && indexEmbedder && !isSameEmbedder(config, indexEmbedder)
+        ? `Index built with ${indexEmbedder.provider} (${indexEmbedder.dimensions} dims), config requests ${config.provider} (${config.dimensions} dims) — rebuild needed.`
+        : null;
 
     const output: StatusOutput = {
       initialized: true,
@@ -175,6 +231,8 @@ export async function runStatus(projectPath: string): Promise<StatusOutput> {
       lastIndexed,
       languages,
       config,
+      indexEmbedder,
+      embedderWarning,
       text: "",
     };
 

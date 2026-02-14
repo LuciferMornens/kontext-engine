@@ -649,6 +649,42 @@ describe("fusionMergeWithPathBoost", () => {
       expect(results[0].chunkId).toBe(2);
       expect(results[0].name).toBe("computeChanges");
     });
+
+    it("deprioritizes data-literal constant maps when implementation code exists", () => {
+      const input: StrategyResult[] = [
+        {
+          strategy: "fts",
+          weight: 1.0,
+          results: [
+            makeResultEx(1, {
+              name: "COMMON_STEMS",
+              filePath: "src/steering/llm.ts",
+              type: "constant",
+              lineStart: 230,
+              lineEnd: 290,
+              text: `const COMMON_STEMS = {
+  connecting: "connect",
+  connection: "connect",
+  migration: "migrate",
+  subscriber: "subscribe",
+};`,
+            }),
+            makeResultEx(2, {
+              name: "buildFallbackStrategies",
+              filePath: "src/steering/llm.ts",
+              type: "function",
+              lineStart: 360,
+              lineEnd: 420,
+              text: "export function buildFallbackStrategies(query: string): StrategyPlan[] { return []; }",
+            }),
+          ],
+        },
+      ];
+
+      const results = fusionMergeWithPathBoost(input, 10, []);
+      expect(results[0].chunkId).toBe(2);
+      expect(results[0].name).toBe("buildFallbackStrategies");
+    });
   });
 
   describe("re-normalization", () => {

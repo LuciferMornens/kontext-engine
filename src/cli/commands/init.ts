@@ -12,6 +12,7 @@ import { IndexError, ErrorCode } from "../../utils/errors.js";
 import { handleCommandError } from "../../utils/error-boundary.js";
 import { createLogger, LogLevel } from "../../utils/logger.js";
 import { createDatabase } from "../../storage/db.js";
+import type { IndexEmbedderMetadata } from "../../storage/db.js";
 import { DEFAULT_CONFIG } from "./config.js";
 import {
   createProjectEmbedder,
@@ -36,6 +37,17 @@ interface IndexStats {
   vectorsCreated: number;
   durationMs: number;
   languageCounts: Map<string, number>;
+}
+
+function isSameEmbedderConfig(
+  a: IndexEmbedderMetadata,
+  b: { provider: string; model: string; dimensions: number },
+): boolean {
+  return (
+    a.provider === b.provider &&
+    a.model === b.model &&
+    a.dimensions === b.dimensions
+  );
 }
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -118,6 +130,26 @@ export async function runInit(
   const db = createDatabase(dbPath, embedderConfig.dimensions);
 
   try {
+    const existingEmbedder = db.getIndexEmbedder();
+    if (existingEmbedder) {
+      if (!isSameEmbedderConfig(existingEmbedder, embedderConfig)) {
+        throw new IndexError(
+          `Index embedder mismatch: index uses ${existingEmbedder.provider} (${existingEmbedder.model}, ${existingEmbedder.dimensions} dims) but config requests ${embedderConfig.provider} (${embedderConfig.model}, ${embedderConfig.dimensions} dims). Rebuild the index.`,
+          ErrorCode.CONFIG_INVALID,
+        );
+      }
+    } else {
+      const isEmptyIndex =
+        db.getFileCount() === 0 && db.getChunkCount() === 0 && db.getVectorCount() === 0;
+      if (isEmptyIndex) {
+        db.setIndexEmbedder({
+          provider: embedderConfig.provider,
+          model: embedderConfig.model,
+          dimensions: embedderConfig.dimensions,
+        });
+      }
+    }
+
     // 3. Discover files
     const discovered = await discoverFiles({
       root: absoluteRoot,

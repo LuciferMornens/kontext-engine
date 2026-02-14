@@ -78,6 +78,12 @@ export interface ChunkWithFile {
   exports: boolean;
 }
 
+export interface IndexEmbedderMetadata {
+  provider: string;
+  model: string;
+  dimensions: number;
+}
+
 export interface ChunkSearchFilters {
   name?: string;
   nameMode?: "exact" | "prefix" | "contains";
@@ -139,12 +145,19 @@ export interface KontextDatabase {
   close(): void;
   getSchemaVersion(): number;
   pragma(key: string): string;
+
+  // Metadata
+  getVectorDimensions(): number | null;
+  getIndexEmbedder(): IndexEmbedderMetadata | null;
+  setIndexEmbedder(metadata: IndexEmbedderMetadata): void;
 }
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
 const DEFAULT_DIMENSIONS = 384;
 const VECTOR_DIMENSIONS_META_KEY = "vector_dimensions";
+const INDEX_EMBEDDER_PROVIDER_META_KEY = "index_embedder_provider";
+const INDEX_EMBEDDER_MODEL_META_KEY = "index_embedder_model";
 
 // ── Factory ──────────────────────────────────────────────────────────────────
 
@@ -235,6 +248,10 @@ export function createDatabase(
   );
   const stmtLastIndexed = db.prepare(
     "SELECT MAX(last_indexed) as lastIndexed FROM files",
+  );
+  const stmtGetMeta = db.prepare("SELECT value FROM meta WHERE key = ?");
+  const stmtSetMeta = db.prepare(
+    "INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)",
   );
 
   // ── Implementation ───────────────────────────────────────────────────────
@@ -530,6 +547,82 @@ export function createDatabase(
         return Object.values(result[0])[0] as string;
       }
       return String(result);
+    },
+
+    getVectorDimensions(): number | null {
+      const row = stmtGetMeta.get(VECTOR_DIMENSIONS_META_KEY) as
+        | { value: string }
+        | undefined;
+      if (!row) return null;
+
+      const dimensions = Number.parseInt(row.value, 10);
+      if (!Number.isInteger(dimensions) || dimensions <= 0) {
+        throw new DatabaseError(
+          `Invalid stored vector dimensions metadata: ${row.value}`,
+          ErrorCode.DB_CORRUPTED,
+        );
+      }
+      return dimensions;
+    },
+
+    getIndexEmbedder(): IndexEmbedderMetadata | null {
+      const providerRow = stmtGetMeta.get(INDEX_EMBEDDER_PROVIDER_META_KEY) as
+        | { value: string }
+        | undefined;
+      const modelRow = stmtGetMeta.get(INDEX_EMBEDDER_MODEL_META_KEY) as
+        | { value: string }
+        | undefined;
+
+      if (!providerRow && !modelRow) return null;
+      if (!providerRow || !modelRow) {
+        throw new DatabaseError(
+          "Corrupted index embedder metadata: provider/model keys are incomplete.",
+          ErrorCode.DB_CORRUPTED,
+        );
+      }
+
+      const dimensions = this.getVectorDimensions();
+      if (dimensions === null) {
+        throw new DatabaseError(
+          "Corrupted index embedder metadata: vector dimensions are missing.",
+          ErrorCode.DB_CORRUPTED,
+        );
+      }
+
+      return {
+        provider: providerRow.value,
+        model: modelRow.value,
+        dimensions,
+      };
+    },
+
+    setIndexEmbedder(metadata: IndexEmbedderMetadata): void {
+      if (!metadata.provider || !metadata.model) {
+        throw new DatabaseError(
+          "Invalid index embedder metadata: provider and model are required.",
+          ErrorCode.DB_WRITE_FAILED,
+        );
+      }
+
+      if (!Number.isInteger(metadata.dimensions) || metadata.dimensions <= 0) {
+        throw new DatabaseError(
+          `Invalid index embedder metadata dimensions: ${String(metadata.dimensions)}`,
+          ErrorCode.DB_WRITE_FAILED,
+        );
+      }
+
+      const vectorDimensions = this.getVectorDimensions();
+      if (vectorDimensions !== null && vectorDimensions !== metadata.dimensions) {
+        throw new DatabaseError(
+          `Index embedder metadata dimensions (${metadata.dimensions}) do not match vector table dimensions (${vectorDimensions}).`,
+          ErrorCode.DB_WRITE_FAILED,
+        );
+      }
+
+      db.transaction(() => {
+        stmtSetMeta.run(INDEX_EMBEDDER_PROVIDER_META_KEY, metadata.provider);
+        stmtSetMeta.run(INDEX_EMBEDDER_MODEL_META_KEY, metadata.model);
+      })();
     },
   };
 }

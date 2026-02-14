@@ -88,6 +88,22 @@ describe("database initialization", () => {
     const mode = db.pragma("journal_mode");
     expect(mode).toBe("wal");
   });
+
+  it("stores and reads index embedder metadata", () => {
+    expect(db.getIndexEmbedder()).toBeNull();
+
+    db.setIndexEmbedder({
+      provider: "local",
+      model: "Xenova/all-MiniLM-L6-v2",
+      dimensions: 384,
+    });
+
+    expect(db.getIndexEmbedder()).toEqual({
+      provider: "local",
+      model: "Xenova/all-MiniLM-L6-v2",
+      dimensions: 384,
+    });
+  });
 });
 
 // ── File CRUD ────────────────────────────────────────────────────────────────

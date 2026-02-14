@@ -109,6 +109,9 @@ describe("ctx status", () => {
     expect(output.config?.provider).toBe("local");
     expect(output.config?.model).toBe("Xenova/all-MiniLM-L6-v2");
     expect(output.config?.dimensions).toBe(384);
+    expect(output.indexEmbedder?.provider).toBe("local");
+    expect(output.indexEmbedder?.model).toBe("Xenova/all-MiniLM-L6-v2");
+    expect(output.indexEmbedder?.dimensions).toBe(384);
   });
 
   it("text output is formatted correctly", async () => {
@@ -126,7 +129,7 @@ describe("ctx status", () => {
     expect(output.text).toContain("Python");
   });
 
-  it("shows configured embedder provider in text output", async () => {
+  it("shows index and config embedders separately when they differ", async () => {
     const root = setup();
     await runInit(root, { log: () => undefined, skipEmbedding: true });
 
@@ -140,7 +143,11 @@ describe("ctx status", () => {
     fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
 
     const output = await runStatus(root);
-    expect(output.text).toContain("Embedder: voyage");
+    expect(output.text).toContain("Index embedder:  local (Xenova/all-MiniLM-L6-v2, 384 dims)");
+    expect(output.text).toContain("Config embedder: voyage (voyage-code-3, 1024 dims)");
+    expect(output.text).toContain("Warning:");
+    expect(output.text).toContain("rebuild needed");
+    expect(output.embedderWarning).toMatch(/rebuild needed/i);
   });
 
   it("reads status for a 1024-dim index when dimensions are omitted by caller", async () => {
