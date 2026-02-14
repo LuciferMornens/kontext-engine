@@ -1,2 +1,150 @@
-// File path matching
-export {};
+import type { KontextDatabase } from "../storage/db.js";
+import type { SearchResult } from "./types.js";
+
+// ── Glob matching ────────────────────────────────────────────────────────────
+
+/**
+ * Convert a simple glob pattern to a RegExp.
+ * Supports: ** (any path), * (any segment chars), ? (single char)
+ */
+function globToRegExp(pattern: string): RegExp {
+  let re = "";
+  let i = 0;
+
+  while (i < pattern.length) {
+    const ch = pattern[i];
+
+    if (ch === "*" && pattern[i + 1] === "*") {
+      // ** matches any number of path segments
+      re += ".*";
+      i += 2;
+      // Skip trailing slash after **
+      if (pattern[i] === "/") i++;
+    } else if (ch === "*") {
+      // * matches anything except /
+      re += "[^/]*";
+      i++;
+    } else if (ch === "?") {
+      re += "[^/]";
+      i++;
+    } else if (".+^${}()|[]\\".includes(ch)) {
+      re += "\\" + ch;
+      i++;
+    } else {
+      re += ch;
+      i++;
+    }
+  }
+
+  return new RegExp(`^${re}$`);
+}
+
+// ── Path search ──────────────────────────────────────────────────────────────
+
+export function pathSearch(
+  db: KontextDatabase,
+  pattern: string,
+  limit: number,
+): SearchResult[] {
+  const allPaths = db.getAllFilePaths();
+  const regex = globToRegExp(pattern);
+  const matchingPaths = allPaths.filter((p) => regex.test(p));
+
+  if (matchingPaths.length === 0) return [];
+
+  // Get all chunks for matching files
+  const results: SearchResult[] = [];
+
+  for (const filePath of matchingPaths) {
+    if (results.length >= limit) break;
+
+    const file = db.getFile(filePath);
+    if (!file) continue;
+
+    const chunks = db.getChunksByFile(file.id);
+    for (const chunk of chunks) {
+      if (results.length >= limit) break;
+
+      results.push({
+        chunkId: chunk.id,
+        filePath: file.path,
+        lineStart: chunk.lineStart,
+        lineEnd: chunk.lineEnd,
+        name: chunk.name,
+        type: chunk.type,
+        text: chunk.text,
+        score: 1.0,
+        language: file.language,
+      });
+    }
+  }
+
+  return results;
+}
+
+// ── Dependency trace (BFS) ───────────────────────────────────────────────────
+
+const DEPTH_SCORE_BASE = 1.0;
+const DEPTH_SCORE_DECAY = 0.2;
+
+export function dependencyTrace(
+  db: KontextDatabase,
+  chunkId: number,
+  direction: "imports" | "importedBy",
+  depth: number,
+): SearchResult[] {
+  const visited = new Set<number>();
+  visited.add(chunkId); // Don't include the starting chunk itself
+
+  const results: SearchResult[] = [];
+  let frontier = [chunkId];
+
+  for (let d = 0; d < depth; d++) {
+    const nextFrontier: number[] = [];
+
+    for (const currentId of frontier) {
+      const neighbors = getNeighbors(db, currentId, direction);
+
+      for (const neighborId of neighbors) {
+        if (visited.has(neighborId)) continue;
+        visited.add(neighborId);
+        nextFrontier.push(neighborId);
+      }
+    }
+
+    if (nextFrontier.length === 0) break;
+
+    // Fetch metadata for this depth level
+    const chunks = db.getChunksByIds(nextFrontier);
+    const score = DEPTH_SCORE_BASE - d * DEPTH_SCORE_DECAY;
+
+    for (const chunk of chunks) {
+      results.push({
+        chunkId: chunk.id,
+        filePath: chunk.filePath,
+        lineStart: chunk.lineStart,
+        lineEnd: chunk.lineEnd,
+        name: chunk.name,
+        type: chunk.type,
+        text: chunk.text,
+        score,
+        language: chunk.language,
+      });
+    }
+
+    frontier = nextFrontier;
+  }
+
+  return results;
+}
+
+function getNeighbors(
+  db: KontextDatabase,
+  chunkId: number,
+  direction: "imports" | "importedBy",
+): number[] {
+  if (direction === "imports") {
+    return db.getDependencies(chunkId).map((d) => d.targetChunkId);
+  }
+  return db.getReverseDependencies(chunkId).map((d) => d.sourceChunkId);
+}

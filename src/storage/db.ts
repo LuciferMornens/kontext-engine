@@ -102,6 +102,11 @@ export interface KontextDatabase {
   getChunksByIds(ids: number[]): ChunkWithFile[];
   deleteChunksByFile(fileId: number): void;
 
+  // Dependencies
+  insertDependency(sourceChunkId: number, targetChunkId: number, type: string): void;
+  getDependencies(chunkId: number): { targetChunkId: number; type: string }[];
+  getReverseDependencies(chunkId: number): { sourceChunkId: number; type: string }[];
+
   // Vectors
   insertVector(chunkId: number, vector: Float32Array): void;
   searchVectors(query: Float32Array, limit: number): VectorResult[];
@@ -194,6 +199,18 @@ export function createDatabase(
 
   const stmtGetAllFiles = db.prepare(
     "SELECT id, path, language, hash, last_indexed as lastIndexed, size FROM files",
+  );
+
+  const stmtInsertDep = db.prepare(
+    "INSERT INTO dependencies (source_chunk_id, target_chunk_id, type) VALUES (?, ?, ?)",
+  );
+
+  const stmtGetDeps = db.prepare(
+    "SELECT target_chunk_id as targetChunkId, type FROM dependencies WHERE source_chunk_id = ?",
+  );
+
+  const stmtGetReverseDeps = db.prepare(
+    "SELECT source_chunk_id as sourceChunkId, type FROM dependencies WHERE target_chunk_id = ?",
   );
 
   // ── Implementation ───────────────────────────────────────────────────────
@@ -369,6 +386,18 @@ export function createDatabase(
         deleteVectorsByChunkIds(db, chunkIds);
       }
       stmtDeleteChunksByFile.run(fileId);
+    },
+
+    insertDependency(sourceChunkId: number, targetChunkId: number, type: string): void {
+      stmtInsertDep.run(sourceChunkId, targetChunkId, type);
+    },
+
+    getDependencies(chunkId: number): { targetChunkId: number; type: string }[] {
+      return stmtGetDeps.all(chunkId) as { targetChunkId: number; type: string }[];
+    },
+
+    getReverseDependencies(chunkId: number): { sourceChunkId: number; type: string }[] {
+      return stmtGetReverseDeps.all(chunkId) as { sourceChunkId: number; type: string }[];
     },
 
     insertVector(chunkId: number, vector: Float32Array): void {
