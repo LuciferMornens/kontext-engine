@@ -49,11 +49,11 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/AstrolightAI/kontext"
+    "url": "https://github.com/LuciferMornens/context-engine"
   },
-  "homepage": "https://github.com/AstrolightAI/kontext#readme",
+  "homepage": "https://github.com/LuciferMornens/context-engine#readme",
   "bugs": {
-    "url": "https://github.com/AstrolightAI/kontext/issues"
+    "url": "https://github.com/LuciferMornens/context-engine/issues"
   },
   "dependencies": {
     "@huggingface/transformers": "^3.8.1",
