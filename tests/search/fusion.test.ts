@@ -270,16 +270,19 @@ function makeResultEx(
     filePath: string;
     type?: string;
     score?: number;
+    lineStart?: number;
+    lineEnd?: number;
+    text?: string;
   },
 ): SearchResult {
   return {
     chunkId,
     filePath: opts.filePath,
-    lineStart: 1,
-    lineEnd: 10,
+    lineStart: opts.lineStart ?? 1,
+    lineEnd: opts.lineEnd ?? 10,
     name: opts.name,
     type: opts.type ?? "function",
-    text: `function ${opts.name}() {}`,
+    text: opts.text ?? `function ${opts.name}() {}`,
     score: opts.score ?? 0.5,
     language: "typescript",
   };
@@ -564,6 +567,87 @@ describe("fusionMergeWithPathBoost", () => {
       for (const testResult of tests) {
         expect(testResult.score).toBeLessThan(nonTest?.score ?? 0);
       }
+    });
+  });
+
+  describe("additional reranking", () => {
+    it("penalizes tiny 1-3 line snippets when larger alternatives exist", () => {
+      const input: StrategyResult[] = [
+        {
+          strategy: "fts",
+          weight: 1.0,
+          results: [
+            makeResultEx(1, {
+              name: "DEFAULT_MAX_TOKENS",
+              filePath: "src/indexer/chunker.ts",
+              type: "constant",
+              lineStart: 29,
+              lineEnd: 31,
+            }),
+            makeResultEx(2, {
+              name: "computeChanges",
+              filePath: "src/indexer/incremental.ts",
+              type: "function",
+              lineStart: 35,
+              lineEnd: 85,
+            }),
+          ],
+        },
+      ];
+
+      const results = fusionMergeWithPathBoost(input, 10, ["indexer"]);
+
+      expect(results[0].chunkId).toBe(2);
+      expect(results[0].name).toBe("computeChanges");
+    });
+
+    it("applies diminishing returns to repeated results from the same file", () => {
+      const input: StrategyResult[] = [
+        {
+          strategy: "fts",
+          weight: 1.0,
+          results: [
+            makeResultEx(1, { name: "a1", filePath: "src/indexer/chunker.ts" }),
+            makeResultEx(2, { name: "a2", filePath: "src/indexer/chunker.ts" }),
+            makeResultEx(3, { name: "a3", filePath: "src/indexer/chunker.ts" }),
+            makeResultEx(4, { name: "b1", filePath: "src/indexer/parser.ts" }),
+          ],
+        },
+      ];
+
+      const results = fusionMergeWithPathBoost(input, 10, ["indexer"]);
+
+      // parser.ts result should bubble above chunker.ts second/third results.
+      expect(results[1].chunkId).toBe(4);
+      expect(results[1].filePath).toBe("src/indexer/parser.ts");
+    });
+
+    it("boosts exported/public API symbols over nearby internal helpers", () => {
+      const input: StrategyResult[] = [
+        {
+          strategy: "fts",
+          weight: 1.0,
+          results: [
+            makeResultEx(1, {
+              name: "collectImportTexts",
+              filePath: "src/indexer/chunker.ts",
+              type: "function",
+              text: "function collectImportTexts(nodes: ASTNode[]): string[] { return []; }",
+            }),
+            makeResultEx(2, {
+              name: "computeChanges",
+              filePath: "src/indexer/incremental.ts",
+              type: "function",
+              text: "export async function computeChanges(): Promise<void> {}",
+            }),
+          ],
+        },
+      ];
+
+      const results = fusionMergeWithPathBoost(input, 10, ["indexer"]);
+
+      expect(results[0].chunkId).toBe(2);
+      expect(results[0].name).toBe("computeChanges");
     });
   });
 

@@ -59,6 +59,7 @@ export function astSearch(
     lineEnd: chunk.lineEnd,
     name: chunk.name,
     type: chunk.type,
+    exported: chunk.exports,
     text: chunk.text,
     score,
     language: chunk.language,

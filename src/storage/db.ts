@@ -74,6 +74,7 @@ export interface ChunkWithFile {
   name: string | null;
   parent: string | null;
   text: string;
+  exports: boolean;
 }
 
 export interface ChunkSearchFilters {
@@ -362,13 +363,28 @@ export function createDatabase(
         .prepare(
           `SELECT c.id, c.file_id as fileId, f.path as filePath, f.language,
                   c.line_start as lineStart, c.line_end as lineEnd,
-                  c.type, c.name, c.parent, c.text
+                  c.type, c.name, c.parent, c.text, c.exports as exports
            FROM chunks c
            JOIN files f ON f.id = c.file_id
            WHERE c.id IN (${placeholders})`,
         )
-        .all(...ids) as ChunkWithFile[];
-      return rows;
+        .all(...ids) as {
+        id: number;
+        fileId: number;
+        filePath: string;
+        language: string;
+        lineStart: number;
+        lineEnd: number;
+        type: string;
+        name: string | null;
+        parent: string | null;
+        text: string;
+        exports: number;
+      }[];
+      return rows.map((r) => ({
+        ...r,
+        exports: r.exports === 1,
+      }));
     },
 
     searchChunks(filters: ChunkSearchFilters, limit: number): ChunkWithFile[] {
@@ -412,7 +428,7 @@ export function createDatabase(
       const sql = `
         SELECT c.id, c.file_id as fileId, f.path as filePath, f.language,
                c.line_start as lineStart, c.line_end as lineEnd,
-               c.type, c.name, c.parent, c.text
+               c.type, c.name, c.parent, c.text, c.exports as exports
         FROM chunks c
         JOIN files f ON f.id = c.file_id
         ${where}
@@ -421,7 +437,23 @@ export function createDatabase(
       `;
 
       params.push(limit);
-      return db.prepare(sql).all(...params) as ChunkWithFile[];
+      const rows = db.prepare(sql).all(...params) as {
+        id: number;
+        fileId: number;
+        filePath: string;
+        language: string;
+        lineStart: number;
+        lineEnd: number;
+        type: string;
+        name: string | null;
+        parent: string | null;
+        text: string;
+        exports: number;
+      }[];
+      return rows.map((r) => ({
+        ...r,
+        exports: r.exports === 1,
+      }));
     },
 
     deleteChunksByFile(fileId: number): void {

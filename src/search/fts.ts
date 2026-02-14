@@ -76,6 +76,7 @@ export function ftsSearch(
       lineEnd: chunk.lineEnd,
       name: chunk.name,
       type: chunk.type,
+      exported: chunk.exports,
       text: chunk.text,
       score: bm25ToScore(fts.rank),
       language: chunk.language,

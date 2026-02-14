@@ -6,6 +6,7 @@ export interface SearchResult {
   lineEnd: number;
   name: string | null;
   type: string;
+  exported?: boolean;
   text: string;
   score: number;
   language: string;

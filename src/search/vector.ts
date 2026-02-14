@@ -56,6 +56,7 @@ export async function vectorSearch(
       lineEnd: chunk.lineEnd,
       name: chunk.name,
       type: chunk.type,
+      exported: chunk.exports,
       text: chunk.text,
       score: distanceToScore(vr.distance),
       language: chunk.language,
