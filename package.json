@@ -6,7 +6,8 @@
   "license": "MIT",
   "bin": {
     "ctx": "dist/cli/index.js",
-    "kontext": "dist/cli/index.js"
+    "kontext": "dist/cli/index.js",
+    "kontext-engine": "dist/cli/index.js"
   },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

@@ -43,8 +43,9 @@ The result: your agent gets exactly the right files and line ranges, in millisec
 ```bash
 npm install -g kontext-engine
 
-# Or run directly
+# Or run directly (any of these work)
 npx kontext-engine init
+npx ctx init
 ```
 
 Requires **Node.js 20+**.
