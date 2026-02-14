@@ -4,9 +4,7 @@
 > No plugins, no MCP - just a CLI.
 
 <div align="center">
-
-https://github.com/LuciferMornens/kontext-engine/releases/download/v0.1.6-demo/kontext-demo-v6.mp4
-
+  <video src="https://raw.githubusercontent.com/LuciferMornens/kontext-engine/main/assets/demo.mp4" width="100%"></video>
 </div>
 
 Any agent that can run bash can use `ctx`. Zero integration required.
