@@ -521,8 +521,8 @@ src/
 ## Development
 
 ```bash
-git clone https://github.com/LuciferMornens/context-engine.git
-cd context-engine
+git clone https://github.com/LuciferMornens/kontext-engine.git
+cd kontext-engine
 npm install
 npm run build         # Build with tsup
 npm run test          # Run tests (vitest) - 369 tests
