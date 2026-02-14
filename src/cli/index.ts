@@ -1,4 +1,5 @@
 import { Command } from "commander";
+import { createRequire } from "node:module";
 import { registerInitCommand } from "./commands/init.js";
 import { registerQueryCommand } from "./commands/query.js";
 import { registerAskCommand } from "./commands/ask.js";
@@ -11,12 +12,15 @@ import { registerChunkCommand } from "./commands/chunk.js";
 import { registerConfigCommand } from "./commands/config.js";
 import { registerAuthCommand } from "./commands/auth.js";
 
+const require = createRequire(import.meta.url);
+const packageJson = require("../../package.json") as { version?: string };
+
 const program = new Command();
 
 program
   .name("ctx")
   .description("Kontext — Context engine for AI coding agents")
-  .version("0.1.0")
+  .version(packageJson.version ?? "0.0.0")
   .option("--verbose", "Enable verbose/debug output");
 
 registerInitCommand(program);

@@ -61,7 +61,10 @@ describe("package build", () => {
       cwd: ROOT,
       encoding: "utf-8",
     });
-    expect(output.trim()).toMatch(/^\d+\.\d+\.\d+$/);
+    const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf-8")) as {
+      version?: string;
+    };
+    expect(output.trim()).toBe(pkg.version);
   });
 
   it("npm pack creates tarball", () => {
