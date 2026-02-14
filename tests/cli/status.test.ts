@@ -106,6 +106,7 @@ describe("ctx status", () => {
     const output = await runStatus(root);
 
     expect(output.config).toBeDefined();
+    expect(output.config?.provider).toBe("local");
     expect(output.config?.model).toBe("Xenova/all-MiniLM-L6-v2");
     expect(output.config?.dimensions).toBe(384);
   });
@@ -123,6 +124,58 @@ describe("ctx status", () => {
     expect(output.text).toContain("Languages:");
     expect(output.text).toContain("Typescript");
     expect(output.text).toContain("Python");
+  });
+
+  it("shows configured embedder provider in text output", async () => {
+    const root = setup();
+    await runInit(root, { log: () => undefined, skipEmbedding: true });
+
+    const configPath = path.join(root, ".ctx", "config.json");
+    const config = JSON.parse(fs.readFileSync(configPath, "utf-8")) as {
+      embedder: { provider: string; model: string; dimensions: number };
+    };
+    config.embedder.provider = "voyage";
+    config.embedder.model = "voyage-code-3";
+    config.embedder.dimensions = 1024;
+    fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+
+    const output = await runStatus(root);
+    expect(output.text).toContain("Embedder: voyage");
+  });
+
+  it("reads status for a 1024-dim index when dimensions are omitted by caller", async () => {
+    const root = setup();
+    const ctxDir = path.join(root, ".ctx");
+    fs.mkdirSync(ctxDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(ctxDir, "config.json"),
+      JSON.stringify({
+        embedder: {
+          provider: "voyage",
+          model: "voyage-code-3",
+          dimensions: 1024,
+        },
+        search: {
+          defaultLimit: 10,
+          strategies: ["vector", "fts", "ast", "path"],
+          weights: { vector: 1.0, fts: 0.8, ast: 0.9, path: 0.7, dependency: 0.6 },
+        },
+        watch: {
+          debounceMs: 500,
+          ignored: [],
+        },
+        llm: {
+          provider: null,
+          model: null,
+        },
+      }, null, 2),
+    );
+
+    await runInit(root, { log: () => undefined, skipEmbedding: true });
+
+    const output = await runStatus(root);
+    expect(output.initialized).toBe(true);
+    expect(output.config?.dimensions).toBe(1024);
   });
 
   it("text output for non-initialized project", async () => {

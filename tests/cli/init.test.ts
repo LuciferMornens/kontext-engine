@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import BetterSqlite3 from "better-sqlite3";
 import { runInit } from "../../src/cli/commands/init.js";
 
 // ── Test helpers ─────────────────────────────────────────────────────────────
@@ -191,5 +192,91 @@ export function validateToken(token: string): boolean {
     expect(fs.existsSync(path.join(tmpDir, ".ctx"))).toBe(true);
     const allText = output.lines.join("\n");
     expect(allText).toMatch(/0 files/);
+  });
+
+  it("uses configured embedder dimensions when creating vector table", async () => {
+    createFixtureProject();
+    const ctxDir = path.join(tmpDir, ".ctx");
+    fs.mkdirSync(ctxDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(ctxDir, "config.json"),
+      JSON.stringify({
+        embedder: {
+          provider: "voyage",
+          model: "voyage-code-3",
+          dimensions: 1024,
+        },
+        search: {
+          defaultLimit: 10,
+          strategies: ["vector", "fts", "ast", "path"],
+          weights: { vector: 1.0, fts: 0.8, ast: 0.9, path: 0.7, dependency: 0.6 },
+        },
+        watch: {
+          debounceMs: 500,
+          ignored: [],
+        },
+        llm: {
+          provider: null,
+          model: null,
+        },
+      }, null, 2),
+    );
+
+    await runInit(tmpDir, { log: () => undefined, skipEmbedding: true });
+
+    const dbPath = path.join(tmpDir, ".ctx", "index.db");
+    const db = new BetterSqlite3(dbPath, { readonly: true });
+    try {
+      const row = db
+        .prepare("SELECT sql FROM sqlite_master WHERE name = 'chunk_vectors'")
+        .get() as { sql: string };
+      expect(row.sql).toContain("embedding float[1024]");
+    } finally {
+      db.close();
+    }
+  });
+
+  it("requires CTX_VOYAGE_KEY when voyage embedder is configured", async () => {
+    createFixtureProject();
+    const ctxDir = path.join(tmpDir, ".ctx");
+    fs.mkdirSync(ctxDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(ctxDir, "config.json"),
+      JSON.stringify({
+        embedder: {
+          provider: "voyage",
+          model: "voyage-code-3",
+          dimensions: 1024,
+        },
+        search: {
+          defaultLimit: 10,
+          strategies: ["vector", "fts", "ast", "path"],
+          weights: { vector: 1.0, fts: 0.8, ast: 0.9, path: 0.7, dependency: 0.6 },
+        },
+        watch: {
+          debounceMs: 500,
+          ignored: [],
+        },
+        llm: {
+          provider: null,
+          model: null,
+        },
+      }, null, 2),
+    );
+
+    const originalKey = process.env["CTX_VOYAGE_KEY"];
+    delete process.env["CTX_VOYAGE_KEY"];
+
+    try {
+      await expect(
+        runInit(tmpDir, { log: () => undefined }),
+      ).rejects.toThrow(/CTX_VOYAGE_KEY/);
+    } finally {
+      if (originalKey) {
+        process.env["CTX_VOYAGE_KEY"] = originalKey;
+      } else {
+        delete process.env["CTX_VOYAGE_KEY"];
+      }
+    }
   });
 });

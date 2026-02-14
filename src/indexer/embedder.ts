@@ -177,14 +177,17 @@ export async function createLocalEmbedder(): Promise<Embedder> {
 
 const VOYAGE_API_URL = "https://api.voyageai.com/v1/embeddings";
 const VOYAGE_MODEL = "voyage-code-3";
-const VOYAGE_DIMENSIONS = 1024;
+const VOYAGE_DEFAULT_DIMENSIONS = 1024;
 const VOYAGE_BATCH_SIZE = 128;
 
 /** Create an embedder using Voyage AI's code embedding API. */
-export function createVoyageEmbedder(apiKey: string): Embedder {
+export function createVoyageEmbedder(
+  apiKey: string,
+  dimensions: number = VOYAGE_DEFAULT_DIMENSIONS,
+): Embedder {
   return {
     name: VOYAGE_MODEL,
-    dimensions: VOYAGE_DIMENSIONS,
+    dimensions,
 
     async embed(
       texts: string[],
@@ -194,7 +197,7 @@ export function createVoyageEmbedder(apiKey: string): Embedder {
 
       for (let i = 0; i < texts.length; i += VOYAGE_BATCH_SIZE) {
         const batch = texts.slice(i, i + VOYAGE_BATCH_SIZE);
-        const vectors = await callVoyageAPI(apiKey, batch);
+        const vectors = await callVoyageAPI(apiKey, batch, "document", dimensions);
         results.push(...vectors);
         onProgress?.(Math.min(i + batch.length, texts.length), texts.length);
       }
@@ -203,7 +206,7 @@ export function createVoyageEmbedder(apiKey: string): Embedder {
     },
 
     async embedSingle(text: string): Promise<Float32Array> {
-      const vectors = await callVoyageAPI(apiKey, [text]);
+      const vectors = await callVoyageAPI(apiKey, [text], "query", dimensions);
       return vectors[0];
     },
   };
@@ -216,6 +219,8 @@ interface EmbeddingAPIResponse {
 async function callVoyageAPI(
   apiKey: string,
   texts: string[],
+  inputType: "document" | "query",
+  dimensions: number,
 ): Promise<Float32Array[]> {
   const response = await fetchWithRetry(VOYAGE_API_URL, {
     method: "POST",
@@ -226,7 +231,8 @@ async function callVoyageAPI(
     body: JSON.stringify({
       model: VOYAGE_MODEL,
       input: texts,
-      input_type: "document",
+      input_type: inputType,
+      output_dimension: dimensions,
     }),
   });
 
@@ -238,14 +244,17 @@ async function callVoyageAPI(
 
 const OPENAI_API_URL = "https://api.openai.com/v1/embeddings";
 const OPENAI_MODEL = "text-embedding-3-large";
-const OPENAI_DIMENSIONS = 1024; // truncated from 3072 for efficiency
+const OPENAI_DEFAULT_DIMENSIONS = 1024; // truncated from 3072 for efficiency
 const OPENAI_BATCH_SIZE = 128;
 
 /** Create an embedder using OpenAI's text-embedding-3-small API. */
-export function createOpenAIEmbedder(apiKey: string): Embedder {
+export function createOpenAIEmbedder(
+  apiKey: string,
+  dimensions: number = OPENAI_DEFAULT_DIMENSIONS,
+): Embedder {
   return {
     name: OPENAI_MODEL,
-    dimensions: OPENAI_DIMENSIONS,
+    dimensions,
 
     async embed(
       texts: string[],
@@ -255,7 +264,7 @@ export function createOpenAIEmbedder(apiKey: string): Embedder {
 
       for (let i = 0; i < texts.length; i += OPENAI_BATCH_SIZE) {
         const batch = texts.slice(i, i + OPENAI_BATCH_SIZE);
-        const vectors = await callOpenAIAPI(apiKey, batch);
+        const vectors = await callOpenAIAPI(apiKey, batch, dimensions);
         results.push(...vectors);
         onProgress?.(Math.min(i + batch.length, texts.length), texts.length);
       }
@@ -264,7 +273,7 @@ export function createOpenAIEmbedder(apiKey: string): Embedder {
     },
 
     async embedSingle(text: string): Promise<Float32Array> {
-      const vectors = await callOpenAIAPI(apiKey, [text]);
+      const vectors = await callOpenAIAPI(apiKey, [text], dimensions);
       return vectors[0];
     },
   };
@@ -273,6 +282,7 @@ export function createOpenAIEmbedder(apiKey: string): Embedder {
 async function callOpenAIAPI(
   apiKey: string,
   texts: string[],
+  dimensions: number,
 ): Promise<Float32Array[]> {
   const response = await fetchWithRetry(OPENAI_API_URL, {
     method: "POST",
@@ -283,7 +293,7 @@ async function callOpenAIAPI(
     body: JSON.stringify({
       model: OPENAI_MODEL,
       input: texts,
-      dimensions: OPENAI_DIMENSIONS,
+      dimensions,
     }),
   });
 

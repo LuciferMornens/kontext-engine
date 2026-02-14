@@ -342,7 +342,14 @@ Configuration lives in `.ctx/config.json`, created automatically by `ctx init`.
 |---|---|---|---|---|
 | `local` | all-MiniLM-L6-v2 | 384 | Free | Default. Runs on CPU via ONNX Runtime. |
 | `voyage` | voyage-code-3 | 1024 | API pricing | Higher quality for code search. |
-| `openai` | text-embedding-3-small | 1536 | API pricing | OpenAI's smallest embedding model. |
+| `openai` | text-embedding-3-large | 1024 | API pricing | OpenAI embedding model (dimension truncated for efficiency). |
+
+Remote embedders require API keys:
+
+```bash
+export CTX_VOYAGE_KEY=your-key
+export CTX_OPENAI_KEY=your-key
+```
 
 ### Search strategies
 

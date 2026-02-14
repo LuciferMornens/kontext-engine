@@ -13,9 +13,12 @@ import { pathSearch, pathKeywordSearch } from "../../search/path.js";
 import { fusionMergeWithPathBoost, extractPathBoostTerms } from "../../search/fusion.js";
 import type { StrategyResult, StrategyName } from "../../search/fusion.js";
 import type { SearchResult } from "../../search/types.js";
-import { createLocalEmbedder } from "../../indexer/embedder.js";
 import type { Embedder } from "../../indexer/embedder.js";
 import { classifyQuery } from "../../steering/classify.js";
+import {
+  createProjectEmbedder,
+  getProjectEmbedderConfig,
+} from "../embedder.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -164,10 +167,14 @@ export async function runQuery(
   }
 
   const start = performance.now();
-  const db = createDatabase(dbPath);
+  const embedderConfig = getProjectEmbedderConfig(absoluteRoot);
+  const db = createDatabase(dbPath, embedderConfig.dimensions);
 
   try {
-    const strategyResults = await runStrategies(db, query, { ...options, limit });
+    const strategyResults = await runStrategies(db, absoluteRoot, query, {
+      ...options,
+      limit,
+    });
     const pathBoostTerms = extractPathBoostTerms(query);
     const fused = fusionMergeWithPathBoost(strategyResults, limit, pathBoostTerms);
     const outputResults = fused.map(toOutputResult);
@@ -197,6 +204,7 @@ export async function runQuery(
 
 async function runStrategies(
   db: KontextDatabase,
+  projectPath: string,
   query: string,
   options: QueryOptions,
 ): Promise<StrategyResult[]> {
@@ -209,6 +217,7 @@ async function runStrategies(
     const weight = effectiveWeights[strategy];
     const searchResults = await executeStrategy(
       db,
+      projectPath,
       strategy,
       query,
       limit,
@@ -225,6 +234,7 @@ async function runStrategies(
 
 async function executeStrategy(
   db: KontextDatabase,
+  projectPath: string,
   strategy: StrategyName,
   query: string,
   limit: number,
@@ -232,7 +242,7 @@ async function executeStrategy(
 ): Promise<SearchResult[]> {
   switch (strategy) {
     case "vector": {
-      const embedder = await loadEmbedder();
+      const embedder = await loadEmbedder(projectPath);
       return vectorSearch(db, embedder, query, limit, filters);
     }
 
@@ -275,10 +285,18 @@ async function executeStrategy(
 // ── Embedder singleton ───────────────────────────────────────────────────────
 
 let embedderInstance: Embedder | null = null;
+let embedderKey: string | null = null;
 
-async function loadEmbedder(): Promise<Embedder> {
-  if (embedderInstance) return embedderInstance;
-  embedderInstance = await createLocalEmbedder();
+function getCacheKey(projectPath: string): string {
+  const config = getProjectEmbedderConfig(projectPath);
+  return `${projectPath}:${config.provider}:${config.model}:${config.dimensions}`;
+}
+
+async function loadEmbedder(projectPath: string): Promise<Embedder> {
+  const cacheKey = getCacheKey(projectPath);
+  if (embedderInstance && embedderKey === cacheKey) return embedderInstance;
+  embedderInstance = await createProjectEmbedder(projectPath);
+  embedderKey = cacheKey;
   return embedderInstance;
 }
 

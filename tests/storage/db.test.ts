@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import BetterSqlite3 from "better-sqlite3";
 import {
   createDatabase,
   SCHEMA_VERSION,
@@ -43,6 +44,44 @@ describe("database initialization", () => {
     expect(db2.getSchemaVersion()).toBe(SCHEMA_VERSION);
     db2.close();
     db = createDatabase(dbPath);
+  });
+
+  it("throws when opening an index with mismatched vector dimensions", () => {
+    const dbPath = path.join(tmpDir, "index.db");
+    db.close();
+    expect(() => createDatabase(dbPath, 1024)).toThrow(/dimension mismatch/i);
+    db = createDatabase(dbPath);
+  });
+
+  it("opens existing non-default-dimension index when dimensions are omitted", () => {
+    const dbPath = path.join(tmpDir, "index-1024.db");
+    const seeded = createDatabase(dbPath, 1024);
+    seeded.close();
+
+    const reopened = createDatabase(dbPath);
+    expect(reopened.getSchemaVersion()).toBe(SCHEMA_VERSION);
+    reopened.close();
+  });
+
+  it("detects mismatched legacy table dimensions when vector metadata is missing", () => {
+    const dbPath = path.join(tmpDir, "index.db");
+    db.close();
+
+    // Simulate a legacy index that has a vector table but lacks
+    // meta.vector_dimensions.
+    const seeded = createDatabase(dbPath, 384);
+    seeded.close();
+    const raw = new BetterSqlite3(dbPath);
+    try {
+      raw
+        .prepare("DELETE FROM meta WHERE key = ?")
+        .run("vector_dimensions");
+    } finally {
+      raw.close();
+    }
+
+    expect(() => createDatabase(dbPath, 1024)).toThrow(/dimension mismatch/i);
+    db = createDatabase(dbPath, 384);
   });
 
   it("enables WAL mode for concurrent reads", () => {

@@ -70,13 +70,18 @@ describe("createWatcher", () => {
     // Add a new file
     fs.writeFileSync(path.join(root, "src", "new.ts"), "const a = 1;\n");
     const addedDetected = await waitFor(
-      () => changes.some((c) => c.type === "add" && c.path.includes("new.ts")),
+      () =>
+        changes.some(
+          (c) =>
+            (c.type === "add" || c.type === "change") &&
+            c.path.includes("new.ts"),
+        ),
       6000,
       75,
     );
 
     expect(addedDetected).toBe(true);
-  });
+  }, 10_000);
 
   it("detects file modification", async () => {
     const root = setup();

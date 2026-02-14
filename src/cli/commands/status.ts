@@ -8,6 +8,7 @@ import { createLogger, LogLevel } from "../../utils/logger.js";
 // ── Types ────────────────────────────────────────────────────────────────────
 
 interface ProjectConfig {
+  provider: string;
   model: string;
   dimensions: number;
 }
@@ -59,9 +60,13 @@ function readConfig(ctxDir: string): ProjectConfig | null {
     const parsed = JSON.parse(raw) as Record<string, unknown>;
     // Support both new (embedder.model) and legacy (model) config formats
     const embedder = parsed.embedder as
-      | { model?: string; dimensions?: number }
+      | { provider?: string; model?: string; dimensions?: number }
       | undefined;
     return {
+      provider:
+        (embedder?.provider as string | undefined) ??
+        (parsed.provider as string | undefined) ??
+        "unknown",
       model:
         embedder?.model ?? (parsed.model as string | undefined) ?? "unknown",
       dimensions:
@@ -119,7 +124,7 @@ function formatStatus(projectPath: string, output: StatusOutput): string {
   if (output.config) {
     lines.push("");
     lines.push(
-      `  Embedder: local (${output.config.model}, ${output.config.dimensions} dims)`,
+      `  Embedder: ${output.config.provider} (${output.config.model}, ${output.config.dimensions} dims)`,
     );
   }
 

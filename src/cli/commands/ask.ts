@@ -22,8 +22,11 @@ import {
   buildFallbackStrategies,
 } from "../../steering/llm.js";
 import type { LLMProvider, StrategyPlan, SearchExecutor } from "../../steering/llm.js";
-import { createLocalEmbedder } from "../../indexer/embedder.js";
 import type { Embedder } from "../../indexer/embedder.js";
+import {
+  createProjectEmbedder,
+  getProjectEmbedderConfig,
+} from "../embedder.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -180,7 +183,11 @@ function formatTextOutput(output: AskOutput): string {
 
 // ── Search executor factory ──────────────────────────────────────────────────
 
-function createSearchExecutor(db: KontextDatabase, query: string): SearchExecutor {
+function createSearchExecutor(
+  db: KontextDatabase,
+  projectPath: string,
+  query: string,
+): SearchExecutor {
   const pathBoostTerms = extractPathBoostTerms(query);
 
   return async (strategies: StrategyPlan[], limit: number): Promise<SearchResult[]> => {
@@ -188,7 +195,7 @@ function createSearchExecutor(db: KontextDatabase, query: string): SearchExecuto
     const fetchLimit = limit * 3;
 
     for (const plan of strategies) {
-      const results = await executeStrategy(db, plan, fetchLimit);
+      const results = await executeStrategy(db, projectPath, plan, fetchLimit);
       if (results.length > 0) {
         strategyResults.push({
           strategy: plan.strategy,
@@ -215,12 +222,13 @@ function isPathLike(query: string): boolean {
 
 async function executeStrategy(
   db: KontextDatabase,
+  projectPath: string,
   plan: StrategyPlan,
   limit: number,
 ): Promise<SearchResult[]> {
   switch (plan.strategy) {
     case "vector": {
-      const embedder = await loadEmbedder();
+      const embedder = await loadEmbedder(projectPath);
       return vectorSearch(db, embedder, plan.query, limit);
     }
     case "fts":
@@ -256,10 +264,18 @@ async function executeStrategy(
 // ── Embedder singleton ───────────────────────────────────────────────────────
 
 let embedderInstance: Embedder | null = null;
+let embedderKey: string | null = null;
 
-async function loadEmbedder(): Promise<Embedder> {
-  if (embedderInstance) return embedderInstance;
-  embedderInstance = await createLocalEmbedder();
+function getCacheKey(projectPath: string): string {
+  const config = getProjectEmbedderConfig(projectPath);
+  return `${projectPath}:${config.provider}:${config.model}:${config.dimensions}`;
+}
+
+async function loadEmbedder(projectPath: string): Promise<Embedder> {
+  const cacheKey = getCacheKey(projectPath);
+  if (embedderInstance && embedderKey === cacheKey) return embedderInstance;
+  embedderInstance = await createProjectEmbedder(projectPath);
+  embedderKey = cacheKey;
   return embedderInstance;
 }
 
@@ -267,10 +283,11 @@ async function loadEmbedder(): Promise<Embedder> {
 
 async function fallbackSearch(
   db: KontextDatabase,
+  projectPath: string,
   query: string,
   limit: number,
 ): Promise<AskOutput> {
-  const executor = createSearchExecutor(db, query);
+  const executor = createSearchExecutor(db, projectPath, query);
   const fallbackStrategies: StrategyPlan[] = buildFallbackStrategies(query);
 
   const results = await executor(fallbackStrategies, limit);
@@ -309,13 +326,14 @@ export async function runAsk(
     );
   }
 
-  const db = createDatabase(dbPath);
+  const embedderConfig = getProjectEmbedderConfig(absoluteRoot);
+  const db = createDatabase(dbPath, embedderConfig.dimensions);
 
   try {
     const provider = options.provider ?? null;
 
     if (!provider) {
-      const output = await fallbackSearch(db, query, limit);
+      const output = await fallbackSearch(db, absoluteRoot, query, limit);
       output.warning = FALLBACK_NOTICE;
       if (options.format === "text") {
         output.text = formatTextOutput(output);
@@ -323,7 +341,7 @@ export async function runAsk(
       return output;
     }
 
-    const executor = createSearchExecutor(db, query);
+    const executor = createSearchExecutor(db, absoluteRoot, query);
 
     if (options.noExplain) {
       return await runNoExplain(provider, query, limit, options, executor);

@@ -6,13 +6,17 @@ import { computeChanges } from "../../indexer/incremental.js";
 import { initParser, parseFile } from "../../indexer/parser.js";
 import { chunkFile } from "../../indexer/chunker.js";
 import type { Chunk } from "../../indexer/chunker.js";
-import { prepareChunkText, createLocalEmbedder } from "../../indexer/embedder.js";
+import { prepareChunkText } from "../../indexer/embedder.js";
 import type { Embedder } from "../../indexer/embedder.js";
 import { IndexError, ErrorCode } from "../../utils/errors.js";
 import { handleCommandError } from "../../utils/error-boundary.js";
 import { createLogger, LogLevel } from "../../utils/logger.js";
 import { createDatabase } from "../../storage/db.js";
 import { DEFAULT_CONFIG } from "./config.js";
+import {
+  createProjectEmbedder,
+  getProjectEmbedderConfig,
+} from "../embedder.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -107,10 +111,11 @@ export async function runInit(
 
   ensureGitignore(absoluteRoot);
   ensureConfig(ctxDir);
+  const embedderConfig = getProjectEmbedderConfig(absoluteRoot);
 
   // 2. Open/create database
   const dbPath = path.join(ctxDir, DB_FILENAME);
-  const db = createDatabase(dbPath);
+  const db = createDatabase(dbPath, embedderConfig.dimensions);
 
   try {
     // 3. Discover files
@@ -236,7 +241,7 @@ export async function runInit(
     let vectorsCreated = 0;
 
     if (!options.skipEmbedding && allChunksWithMeta.length > 0) {
-      const embedder = await createEmbedder();
+      const embedder = await createEmbedder(absoluteRoot);
 
       const texts = allChunksWithMeta.map((cm) =>
         prepareChunkText(cm.fileRelPath, cm.chunk.parent, cm.chunk.text),
@@ -287,8 +292,8 @@ export async function runInit(
 
 // ── Embedder factory (separated for testability) ─────────────────────────────
 
-async function createEmbedder(): Promise<Embedder> {
-  return createLocalEmbedder();
+async function createEmbedder(projectPath: string): Promise<Embedder> {
+  return createProjectEmbedder(projectPath);
 }
 
 // ── CLI registration ─────────────────────────────────────────────────────────

@@ -169,10 +169,12 @@ describe("createVoyageEmbedder", () => {
       model: string;
       input: string[];
       input_type: string;
+      output_dimension: number;
     };
     expect(body.model).toBe("voyage-code-3");
     expect(body.input).toEqual(["function hello() {}"]);
-    expect(body.input_type).toBe("document");
+    expect(body.input_type).toBe("query");
+    expect(body.output_dimension).toBe(1024);
 
     const headers = options.headers as Record<string, string>;
     expect(headers["Authorization"]).toBe("Bearer test-voyage-key");

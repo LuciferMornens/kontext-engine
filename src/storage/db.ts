@@ -16,6 +16,7 @@ import {
   searchVectors as vecSearch,
 } from "./vectors.js";
 import type { VectorResult } from "./vectors.js";
+import { DatabaseError, ErrorCode } from "../utils/errors.js";
 
 export { SCHEMA_VERSION } from "./schema.js";
 
@@ -143,13 +144,14 @@ export interface KontextDatabase {
 // ── Constants ────────────────────────────────────────────────────────────────
 
 const DEFAULT_DIMENSIONS = 384;
+const VECTOR_DIMENSIONS_META_KEY = "vector_dimensions";
 
 // ── Factory ──────────────────────────────────────────────────────────────────
 
 /** Create or open a SQLite database at the given path. Initializes schema and loads sqlite-vec. */
 export function createDatabase(
   dbPath: string,
-  dimensions: number = DEFAULT_DIMENSIONS,
+  dimensions?: number,
 ): KontextDatabase {
   // Ensure directory exists
   const dir = path.dirname(dbPath);
@@ -167,7 +169,8 @@ export function createDatabase(
   sqliteVec.load(db);
 
   // Run schema migrations
-  initializeSchema(db, dimensions);
+  initializeSchema(db, dimensions ?? DEFAULT_DIMENSIONS);
+  ensureVectorDimensions(db, dimensions);
 
   // ── Prepared statements ──────────────────────────────────────────────────
 
@@ -553,4 +556,78 @@ function getMetaVersion(db: BetterSqlite3.Database): number {
     // meta table doesn't exist yet
     return 0;
   }
+}
+
+function ensureVectorDimensions(
+  db: BetterSqlite3.Database,
+  expectedDimensions?: number,
+): void {
+  const actual = getExistingVectorDimensions(db);
+  const stored = db
+    .prepare("SELECT value FROM meta WHERE key = ?")
+    .get(VECTOR_DIMENSIONS_META_KEY) as { value: string } | undefined;
+  const storedValue = stored?.value;
+
+  const storedDimensions = storedValue
+    ? Number.parseInt(storedValue, 10)
+    : undefined;
+
+  if (storedDimensions !== undefined && (!Number.isInteger(storedDimensions) || storedDimensions <= 0)) {
+    throw new DatabaseError(
+      `Invalid stored vector dimensions metadata: ${storedValue ?? "unknown"}`,
+      ErrorCode.DB_CORRUPTED,
+    );
+  }
+
+  // Guard against corrupted metadata when both sources are available.
+  if (actual !== null && storedDimensions !== undefined && storedDimensions !== actual) {
+    throw new DatabaseError(
+      `Vector dimensions metadata mismatch: meta=${storedDimensions}, table=${actual}.`,
+      ErrorCode.DB_CORRUPTED,
+    );
+  }
+
+  // If caller did not request a specific dimension, treat existing table
+  // dimensions as canonical to avoid breaking read-style opens.
+  if (expectedDimensions === undefined) {
+    if (storedDimensions !== undefined) return;
+
+    const dimensions = actual ?? DEFAULT_DIMENSIONS;
+    db.prepare(
+      "INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)",
+    ).run(VECTOR_DIMENSIONS_META_KEY, String(dimensions));
+    return;
+  }
+
+  if (!stored) {
+    const dimensions = actual ?? expectedDimensions;
+    db.prepare(
+      "INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)",
+    ).run(VECTOR_DIMENSIONS_META_KEY, String(dimensions));
+    if (actual !== null && actual !== expectedDimensions) {
+      throw new DatabaseError(
+        `Vector dimension mismatch: index uses ${actual} dims, but config requests ${expectedDimensions} dims. Rebuild the index.`,
+        ErrorCode.CONFIG_INVALID,
+      );
+    }
+    return;
+  }
+
+  if (storedDimensions !== expectedDimensions) {
+    throw new DatabaseError(
+      `Vector dimension mismatch: index uses ${storedDimensions} dims, but config requests ${expectedDimensions} dims. Rebuild the index.`,
+      ErrorCode.CONFIG_INVALID,
+    );
+  }
+}
+
+function getExistingVectorDimensions(db: BetterSqlite3.Database): number | null {
+  const row = db
+    .prepare("SELECT sql FROM sqlite_master WHERE name = 'chunk_vectors'")
+    .get() as { sql?: string } | undefined;
+  const sql = row?.sql;
+  if (!sql) return null;
+  const match = sql.match(/embedding\s+float\[(\d+)\]/i);
+  if (!match) return null;
+  return Number.parseInt(match[1], 10);
 }

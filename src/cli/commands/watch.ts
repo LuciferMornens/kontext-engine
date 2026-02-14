@@ -8,13 +8,17 @@ import type { FileChange, WatcherHandle } from "../../watcher/watcher.js";
 import { initParser, parseFile } from "../../indexer/parser.js";
 import { chunkFile } from "../../indexer/chunker.js";
 import type { Chunk } from "../../indexer/chunker.js";
-import { prepareChunkText, createLocalEmbedder } from "../../indexer/embedder.js";
+import { prepareChunkText } from "../../indexer/embedder.js";
 import type { Embedder } from "../../indexer/embedder.js";
 import { KontextError, IndexError, ErrorCode } from "../../utils/errors.js";
 import { handleCommandError } from "../../utils/error-boundary.js";
 import { createLogger, LogLevel } from "../../utils/logger.js";
 import { LANGUAGE_MAP } from "../../indexer/discovery.js";
 import { runInit } from "./init.js";
+import {
+  createProjectEmbedder,
+  getProjectEmbedderConfig,
+} from "../embedder.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -159,7 +163,7 @@ async function reindexChanges(
 
   // Embedding (if enabled)
   if (!options.skipEmbedding && allChunksWithMeta.length > 0) {
-    const embedder = await loadEmbedder();
+    const embedder = await loadEmbedder(projectPath);
 
     const texts = allChunksWithMeta.map((cm) =>
       prepareChunkText(cm.fileRelPath, cm.chunk.parent, cm.chunk.text),
@@ -182,10 +186,18 @@ async function reindexChanges(
 // ── Embedder singleton ───────────────────────────────────────────────────────
 
 let embedderInstance: Embedder | null = null;
+let embedderKey: string | null = null;
 
-async function loadEmbedder(): Promise<Embedder> {
-  if (embedderInstance) return embedderInstance;
-  embedderInstance = await createLocalEmbedder();
+function getCacheKey(projectPath: string): string {
+  const config = getProjectEmbedderConfig(projectPath);
+  return `${projectPath}:${config.provider}:${config.model}:${config.dimensions}`;
+}
+
+async function loadEmbedder(projectPath: string): Promise<Embedder> {
+  const cacheKey = getCacheKey(projectPath);
+  if (embedderInstance && embedderKey === cacheKey) return embedderInstance;
+  embedderInstance = await createProjectEmbedder(projectPath);
+  embedderKey = cacheKey;
   return embedderInstance;
 }
 
@@ -217,7 +229,8 @@ export async function runWatch(
   await initParser();
 
   // Open DB
-  const db = createDatabase(dbPath);
+  const embedderConfig = getProjectEmbedderConfig(absoluteRoot);
+  const db = createDatabase(dbPath, embedderConfig.dimensions);
 
   // Create watcher
   let watcherHandle: WatcherHandle | null = null;
