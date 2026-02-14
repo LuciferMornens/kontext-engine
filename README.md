@@ -3,6 +3,12 @@
 > Give your AI coding agent deep understanding of any codebase.
 > No plugins, no MCP - just a CLI.
 
+<div align="center">
+
+https://github.com/LuciferMornens/kontext-engine/releases/download/v0.1.6-demo/kontext-demo-v6.mp4
+
+</div>
+
 Any agent that can run bash can use `ctx`. Zero integration required.
 
 ```bash
